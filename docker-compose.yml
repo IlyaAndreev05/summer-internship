@@ -1,0 +1,49 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
+      - LLM_MODEL=${LLM_MODEL:-qwen2.5:1.5b}
+      - LLM_BASE_URL=${LLM_BASE_URL:-http://ollama:11434/v1}
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - EMBED_MODEL=${EMBED_MODEL:-paraphrase-multilingual-MiniLM-L12-v2}
+      - EMBED_DEVICE=${EMBED_DEVICE:-cpu}
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN:-}
+      - VK_TOKEN=${VK_TOKEN:-}
+      - VK_GROUP_ID=${VK_GROUP_ID:-}
+      - DATABASE_URL=${DATABASE_URL:-sqlite+aiosqlite:///data/chat_history.db}
+      - CHROMA_PERSIST_DIR=${CHROMA_PERSIST_DIR:-data/chroma}
+      - CHROMA_COLLECTION=${CHROMA_COLLECTION:-alina_docs}
+      - CHAT_MAX_MESSAGES=${CHAT_MAX_MESSAGES:-20}
+      - DOCS_DIR=${DOCS_DIR:-data/documents}
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      ollama:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ollama serve &
+        sleep 5
+        ollama pull ${LLM_MODEL:-qwen2.5:1.5b}
+        wait
+
+volumes:
+  ollama_data:
