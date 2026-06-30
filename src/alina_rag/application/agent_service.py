@@ -1,7 +1,7 @@
 """ReAct agent — core reasoning loop for the ALINA GPSS AI Consultant."""
 
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from alina_rag.config import settings
 from alina_rag.application.prompts import build_system_prompt
@@ -36,7 +36,10 @@ class AgentService:
         self._bm25_store = bm25_store
         self._session_store = session_store
 
-    async def process_message(self, user_id: UserId, message_text: str) -> str:
+    async def process_message(
+        self, user_id: UserId, message_text: str,
+        step_callback: "Callable[[AgentStep], None] | None" = None,
+    ) -> str:
         """Process a user message and return the assistant's response."""
         session = self._session_store.get_or_create(
             user_id, max_messages=settings.chat_max_messages
@@ -46,14 +49,17 @@ class AgentService:
         session.add_message(user_message)
 
         history_text = session.history_text
-        response = await self._react_loop(message_text, history_text)
+        response = await self._react_loop(message_text, history_text, step_callback)
 
         assistant_message = Message(user_id=user_id, role=Role.ASSISTANT, content=response)
         session.add_message(assistant_message)
 
         return response
 
-    async def _react_loop(self, query: str, history: str) -> str:
+    async def _react_loop(
+        self, query: str, history: str,
+        step_callback: "Callable[[AgentStep], None] | None" = None,
+    ) -> str:
         """Run the ReAct reasoning loop (max MAX_REACT_STEPS steps)."""
         steps: list[AgentStep] = []
         search_count = 0
@@ -75,11 +81,15 @@ class AgentService:
                     observation = await self._execute_search(search_query)
                 step = self._parse_step(llm_output, observation)
                 steps.append(step)
+                if step_callback:
+                    step_callback(step)
                 continue
 
             # No search and no final answer — store step and continue
             step = self._parse_step(llm_output, "")
             steps.append(step)
+            if step_callback:
+                step_callback(step)
 
         # Fallback: return last meaningful output
         return self._fallback_answer(steps)

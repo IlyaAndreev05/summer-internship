@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     )
 
     # ── LLM ──────────────────────────────────────────
-    llm_provider: Literal["ollama", "openai"] = "ollama"
+    llm_provider: Literal["ollama", "openai", "deepseek"] = "ollama"
     llm_model: str = "qwen2.5:1.5b"
     llm_base_url: str = "http://localhost:11434/v1"
     llm_api_key: str = ""

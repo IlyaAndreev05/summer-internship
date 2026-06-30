@@ -6,9 +6,11 @@ from typing import TYPE_CHECKING
 
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.panel import Panel
 from rich.prompt import Prompt
+from rich.text import Text
 
-from alina_rag.domain.models import BotPlatform, UserId
+from alina_rag.domain.models import AgentStep, BotPlatform, UserId
 
 if TYPE_CHECKING:
     from alina_rag.application.chat_service import ChatService
@@ -16,12 +18,25 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def run_console(chat_service: "ChatService") -> None:
-    """Run the interactive console UI.
+def _on_step(console: Console, step: AgentStep) -> None:
+    """Callback: print each ReAct step to the console."""
+    if step.thought:
+        console.print(Panel(
+            step.thought,
+            title="[bold blue]Thought[/]",
+            border_style="blue",
+        ))
+    if step.action_input:
+        label = "search_documents" if "search" in step.action else "search_keywords"
+        console.print(Text(f"  🔍 {label}(\"{step.action_input}\")", style="dim yellow"))
+    if step.observation:
+        # Truncate long observations
+        obs = step.observation[:300] + "..." if len(step.observation) > 300 else step.observation
+        console.print(Text(f"  📄 {obs}", style="dim green"))
 
-    Handles /exit and /clear commands locally.
-    Ctrl+C triggers graceful exit.
-    """
+
+async def run_console(chat_service: "ChatService") -> None:
+    """Run the interactive console UI."""
     console = Console()
     user_id = UserId(BotPlatform.CONSOLE, "anonymous")
 
@@ -63,7 +78,8 @@ async def run_console(chat_service: "ChatService") -> None:
         with console.status("[dim]Думаю...[/]", spinner="dots"):
             try:
                 response = await chat_service.handle_message(
-                    user_id, stripped
+                    user_id, stripped,
+                    step_callback=lambda s: _on_step(console, s),
                 )
             except Exception:
                 logger.exception("Chat service error")

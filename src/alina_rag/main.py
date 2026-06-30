@@ -43,11 +43,14 @@ def _build_llm_provider() -> LLMProvider:
         from alina_rag.infrastructure.ollama_provider import OllamaProvider
 
         return OllamaProvider()
+    elif settings.llm_provider == "deepseek":
+        from alina_rag.infrastructure.openai_provider import OpenAIProvider
+
+        return OpenAIProvider()
     else:
         from alina_rag.infrastructure.openai_provider import OpenAIProvider
 
         return OpenAIProvider()
-
 
 def _build_embedding_provider() -> EmbeddingProvider:
     from alina_rag.infrastructure.embedding_provider import STEmbeddingProvider

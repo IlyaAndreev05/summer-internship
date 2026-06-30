@@ -1,8 +1,8 @@
 """Chat orchestration — saves messages and delegates to the agent."""
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
-from alina_rag.domain.models import Message, Role, UserId
+from alina_rag.domain.models import AgentStep, Message, Role, UserId
 
 if TYPE_CHECKING:
     from alina_rag.application.agent_service import AgentService
@@ -16,12 +16,17 @@ class ChatService:
         self._agent = agent
         self._chat_repo = chat_repo
 
-    async def handle_message(self, user_id: UserId, message_text: str) -> str:
+    async def handle_message(
+        self, user_id: UserId, message_text: str,
+        step_callback: "Callable[[AgentStep], None] | None" = None,
+    ) -> str:
         """Process a user message through the full pipeline."""
         user_message = Message(user_id=user_id, role=Role.USER, content=message_text)
         await self._chat_repo.save_message(user_message)
 
-        response_text = await self._agent.process_message(user_id, message_text)
+        response_text = await self._agent.process_message(
+            user_id, message_text, step_callback=step_callback,
+        )
 
         assistant_message = Message(user_id=user_id, role=Role.ASSISTANT, content=response_text)
         await self._chat_repo.save_message(assistant_message)
