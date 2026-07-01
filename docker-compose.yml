@@ -1,35 +1,52 @@
+x-common: &common
+  ulimits:
+    nofile:
+      soft: 1048576
+      hard: 1048576
+  restart: unless-stopped
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: 100m
+      max-file: 5
+
+x-env: &env
+  env_file: .env
+
 services:
   app:
+    <<: [*common, *logging]
     build: .
-    ports:
-      - "8000:8000"
+    stdin_open: true
+    tty: true
     environment:
-      - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
-      - LLM_MODEL=${LLM_MODEL:-qwen2.5:1.5b}
-      - LLM_BASE_URL=${LLM_BASE_URL:-http://ollama:11434/v1}
-      - LLM_API_KEY=${LLM_API_KEY:-}
-      - EMBED_MODEL=${EMBED_MODEL:-paraphrase-multilingual-MiniLM-L12-v2}
-      - EMBED_DEVICE=${EMBED_DEVICE:-cpu}
-      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN:-}
-      - VK_TOKEN=${VK_TOKEN:-}
-      - VK_GROUP_ID=${VK_GROUP_ID:-}
-      - DATABASE_URL=${DATABASE_URL:-sqlite+aiosqlite:///data/chat_history.db}
-      - CHROMA_PERSIST_DIR=${CHROMA_PERSIST_DIR:-data/chroma}
-      - CHROMA_COLLECTION=${CHROMA_COLLECTION:-alina_docs}
-      - CHAT_MAX_MESSAGES=${CHAT_MAX_MESSAGES:-20}
-      - DOCS_DIR=${DOCS_DIR:-data/documents}
       - PYTHONUNBUFFERED=1
     volumes:
+      - ./docs:/app/docs:ro
+      - ./projects:/app/projects:ro
+      - ./tests:/app/tests:ro
       - ./data:/app/data
     depends_on:
       ollama:
-        condition: service_started
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     deploy:
       resources:
         limits:
           memory: 2G
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "alina-rag"] || ["CMD", "true"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   ollama:
+    <<: [*common, *logging, *env]
     image: ollama/ollama:latest
     ports:
       - "11434:11434"
@@ -43,7 +60,58 @@ services:
         ollama serve &
         sleep 5
         ollama pull ${LLM_MODEL:-qwen2.5:1.5b}
+        ollama pull ${EMBED_MODEL:-nomic-embed-text}
         wait
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  qdrant:
+    <<: [*common, *logging]
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  postgres:
+    <<: [*common, *logging, *env]
+    image: postgres:18
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-alina}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-alina}
+      - POSTGRES_DB=${POSTGRES_DB:-alina}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-alina} -d ${POSTGRES_DB:-alina}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   ollama_data:
+  qdrant_data:
+  postgres_data:
