@@ -46,7 +46,10 @@ def _build_llm_provider() -> LLMProvider:
     elif settings.llm_provider == "deepseek":
         from alina_rag.infrastructure.openai_provider import OpenAIProvider
 
-        return OpenAIProvider()
+        return OpenAIProvider(
+            base_url="https://api.deepseek.com/v1",
+            model="deepseek-v4-flash",
+        )
     else:
         from alina_rag.infrastructure.openai_provider import OpenAIProvider
 

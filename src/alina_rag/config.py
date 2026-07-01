@@ -39,6 +39,7 @@ class Settings(BaseSettings):
 
     # ── Chat ──────────────────────────────────────────
     chat_max_messages: int = 20
+    chat_verbose: bool = False   # show agent thoughts and tool calls in console
 
     # ── Prompts ────────────────────────────────────────
     # Override system prompt: set a string directly, or @path/to/file.txt

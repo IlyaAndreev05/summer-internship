@@ -14,14 +14,19 @@ class OpenAIProvider(BaseLLMProvider):
     To switch to a different remote provider, subclass BaseLLMProvider.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        model: str | None = None,
+    ) -> None:
         super().__init__()
-        api_key = settings.llm_api_key or "not-needed"
+        _api_key = api_key or settings.llm_api_key or "not-needed"
         self._client = AsyncOpenAI(
-            base_url=settings.llm_base_url,
-            api_key=api_key,
+            base_url=base_url or settings.llm_base_url,
+            api_key=_api_key,
         )
-        self._model = settings.llm_model
+        self._model = model or settings.llm_model
 
     async def _download_model(self) -> None:
         """No-op: remote models don't need downloading."""
