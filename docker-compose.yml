@@ -40,14 +40,14 @@ services:
         limits:
           memory: 2G
     healthcheck:
-      test: ["CMD", "pgrep", "-f", "alina-rag"] || ["CMD", "true"]
+      test: ["CMD-SHELL", "pgrep sleep || true"]
       interval: 30s
       timeout: 10s
       retries: 3
 
   ollama:
     <<: [*common, *logging, *env]
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.31.1
     ports:
       - "11434:11434"
     volumes:
@@ -75,7 +75,7 @@ services:
 
   qdrant:
     <<: [*common, *logging]
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.18.2
     ports:
       - "6333:6333"
     volumes:

@@ -1,24 +1,73 @@
 # ALINA GPSS AI Consultant
 
 ИИ-консультант по работе с ALINA GPSS на основе RAG (Retrieval-Augmented Generation).
-Использует LangChain, Ollama, Qdrant, PostgreSQL и BM25.
+LangChain + Ollama + Qdrant + PostgreSQL + BM25.
 
 ## Требования
 
-- Python 3.12+
-- Docker и Docker Compose (для production-запуска)
-- [uv](https://docs.astral.sh/uv/) (для локальной разработки)
+- Docker и Docker Compose
+- [uv](https://docs.astral.sh/uv/) — только для локальной разработки
 
-## Быстрый старт (Docker)
+## Быстрый старт (Docker Compose)
 
 ```bash
 cp .env.example .env
 docker compose up -d
-docker compose exec app uv run alina-rag index
-docker compose exec app uv run alina-rag console
 ```
 
-## Локальная разработка
+Подождать пока Ollama скачает модели (около минуты):
+
+```bash
+docker compose logs -f ollama
+```
+
+Дождаться `qwen2.5:1.5b` и `nomic-embed-text`, затем `Ctrl+C`.
+
+### Индексирование документов
+
+Положи документацию в `docs/`, проекты в `projects/`, затем:
+
+```bash
+docker compose exec app uv run alina-rag index
+```
+
+### Консольный чат-бот
+
+```bash
+docker compose exec -it app uv run alina-rag console
+```
+
+Команды внутри чата: `/exit`, `/clear`, `/verbose`.
+
+### Массовая обработка (batch)
+
+Файлы из `tests/` с колонками `№, Вопрос, Ответ` (Ответ пустой — система заполнит):
+
+```bash
+docker compose exec app uv run alina-rag batch
+```
+
+Результат: `*_filled.*` в `tests/`.
+
+### Тестирование с самооценкой (test)
+
+Файлы из `tests/` с колонками `№, Вопрос, Ответ, Правильный ответ`. Система заполняет ответ, LLM-судья сравнивает с правильным и ставит оценку 1–10:
+
+```bash
+docker compose exec app uv run alina-rag test
+```
+
+Результат: `*_scored.*` в `tests/` + статистика в консоли.
+
+### VK бот
+
+Нужен `VK_TOKEN` и `VK_GROUP_ID` в `.env`:
+
+```bash
+docker compose exec app uv run alina-rag vk
+```
+
+## Локальная разработка (без Docker)
 
 ```bash
 cp .env.example .env
@@ -31,83 +80,26 @@ uv run alina-rag console
 
 | Переменная | По умолчанию | Описание |
 |---|---|---|
-| `LLM_MODEL` | `qwen2.5:1.5b` | Модель Ollama для генерации |
-| `LLM_BASE_URL` | `http://localhost:11434` | Адрес Ollama |
-| `EMBED_MODEL` | `nomic-embed-text` | Модель Ollama для эмбеддингов |
-| `QDRANT_URL` | `http://localhost:6333` | Адрес Qdrant |
-| `QDRANT_COLLECTION` | `alina_docs` | Название коллекции Qdrant |
-| `POSTGRES_URL` | `postgresql://alina:alina@localhost:5432/alina` | URL базы PostgreSQL |
-| `VK_TOKEN` | — | Токен сообщества VK |
+| `LLM_MODEL` | `qwen2.5:1.5b` | Модель Ollama |
+| `LLM_BASE_URL` | `http://ollama:11434` | Адрес Ollama |
+| `EMBED_MODEL` | `nomic-embed-text` | Модель для эмбеддингов |
+| `QDRANT_URL` | `http://qdrant:6333` | Адрес Qdrant |
+| `QDRANT_COLLECTION` | `alina_docs` | Коллекция Qdrant |
+| `POSTGRES_URL` | `postgresql://alina:alina@postgres:5432/alina` | PostgreSQL |
+| `VK_TOKEN` | — | Токен VK |
 | `VK_GROUP_ID` | — | ID группы VK |
 | `DOCS_DIR` | `docs` | Папка с документацией |
-| `PROJECTS_DIR` | `projects` | Папка с проектами (xlsx/csv) |
-| `TESTS_DIR` | `tests` | Папка с тестовыми файлами |
-| `CHUNK_SIZE` | `500` | Размер чанка для индексации |
+| `PROJECTS_DIR` | `projects` | Папка с проектами |
+| `TESTS_DIR` | `tests` | Папка с тестами |
+| `CHUNK_SIZE` | `500` | Размер чанка |
 | `CHUNK_OVERLAP` | `100` | Перекрытие чанков |
 
-## Команды
-
-### `alina-rag index` — Индексирование документов
-
-Загружает все файлы из папок `docs/` и `projects/`, разбивает на чанки и индексирует в Qdrant (векторный поиск) и BM25 (ключевые слова).
-
-Поддерживаемые форматы: `.txt`, `.md`, `.pdf`, `.docx`, `.doc`, `.xlsx`, `.xls`, `.csv`.
+## Структура папок с данными
 
 ```
-docs/       — документация (руководство пользователя и т.д.)
-projects/   — файлы проектов (xlsx/csv с карточками проектов)
-```
-
-### `alina-rag console` — Локальный чат-бот
-
-Запускает интерактивный чат в терминале. Команды внутри чата:
-
-- `/exit` — выход
-- `/clear` — очистить историю
-- `/verbose` — показать информацию о поиске
-
-### `alina-rag vk` — VK бот
-
-Запускает бота для сообщества ВКонтакте. Требует `VK_TOKEN` и `VK_GROUP_ID` в `.env`.
-
-### `alina-rag batch` — Массовая обработка вопросов
-
-Обрабатывает CSV/XLSX файлы из папки `tests/`. Файл должен содержать колонки:
-
-| № | Вопрос | Ответ |
-|---|---|---|
-| 1 | Что такое транзакт? | *(пусто)* |
-
-Система заполняет колонку «Ответ» и сохраняет результат в `*_filled.*`.
-
-### `alina-rag test` — Тестирование с самооценкой
-
-Обрабатывает CSV/XLSX файлы из папки `tests/`. Файл должен содержать колонки:
-
-| № | Вопрос | Ответ | Правильный ответ |
-|---|---|---|---|
-| 1 | Что такое транзакт? | *(пусто)* | Транзакт — динамический объект GPSS... |
-
-Система:
-1. Заполняет ответ (если пустой)
-2. Сравнивает ответ с правильным через LLM-судью
-3. Выставляет оценку от 1 до 10
-4. Сохраняет результат в `*_scored.*`
-5. Выводит итоговую статистику в консоль
-
-## Архитектура
-
-```
-alina_rag/
-    main.py         — CLI (typer): console, vk, index, batch, test
-    config.py       — Pydantic Settings
-    prompts.py      — Системные промпты
-    agent.py        — RAG-цепочка: Qdrant + BM25 → LLM
-    indexer.py      — Индексация документов
-    console_bot.py  — Терминальный чат
-    vk_bot.py       — VK бот
-    batch_mode.py   — Массовая обработка
-    test_mode.py    — Тестирование с самооценкой
+docs/       — .txt .md .pdf .docx .doc
+projects/   — .xlsx .xls .csv
+tests/      — .csv .xlsx .xls
 ```
 
 ## Docker-сервисы
@@ -115,9 +107,24 @@ alina_rag/
 | Сервис | Порт | Описание |
 |---|---|---|
 | `app` | — | Приложение |
-| `ollama` | 11434 | Локальный LLM (qwen2.5:1.5b + nomic-embed-text) |
+| `ollama` | 11434 | LLM + эмбеддинги |
 | `qdrant` | 6333 | Векторная БД |
-| `postgres` | 5432 | Реляционная БД (PostgreSQL 18) |
+| `postgres` | 5432 | PostgreSQL 18 |
+
+## Архитектура
+
+```
+alina_rag/
+    main.py         — CLI (console, vk, index, batch, test)
+    config.py       — Настройки
+    prompts.py      — Системные промпты
+    agent.py        — RAG: Qdrant + BM25 → LLM
+    indexer.py      — Индексация документов
+    console_bot.py  — Терминальный чат
+    vk_bot.py       — VK бот
+    batch_mode.py   — Массовая обработка
+    test_mode.py    — Тест с самооценкой
+```
 
 ## Инструкция администратора
 
@@ -131,51 +138,24 @@ cp .env.example .env
 
 ### Настройка
 
-1. Отредактируйте `.env` — укажите токены VK, если нужен бот
+1. Отредактируйте `.env` — укажите токены VK при необходимости
 2. Поместите документацию в `docs/`
 3. Поместите файлы проектов в `projects/`
 
 ### Запуск
 
 ```bash
-docker compose up -d          # запуск всех сервисов
-docker compose exec app uv run alina-rag index   # первичная индексация
+docker compose up -d
+docker compose logs -f ollama    # дождаться загрузки моделей
+docker compose exec app uv run alina-rag index
 ```
 
 ### Обновление данных
-
-При добавлении новых документов:
 
 ```bash
 docker compose exec app uv run alina-rag index
 ```
 
-## Инструкция пользователя
-
-### Консольный чат
-
-```bash
-uv run alina-rag console
-```
-
-Задавайте вопросы по работе с ALINA GPSS в свободной форме. Система ищет релевантные фрагменты в документации и формирует ответ.
-
-### Типы поддерживаемых вопросов
-
-- **Справочные:** «Что такое транзакт?», «Какие блоки есть в GPSS?»
-- **Практические:** «Как создать очередь?», «Как настроить блок GENERATE?»
-- **По примерам:** «Есть ли пример модели склада?»
-
-### VK бот
-
-Напишите сообщение в сообщество ВК. Бот ответит в течение нескольких секунд.
-
 ## Технологический стек
 
-- Python 3.14
-- LangChain (RAG-фреймворк)
-- Ollama (локальный LLM)
-- Qdrant (векторный поиск)
-- BM25 (ключевые слова)
-- PostgreSQL 18 (история чатов)
-- Docker Compose (развёртывание)
+Python 3.14, LangChain, Ollama (qwen2.5:1.5b + nomic-embed-text), Qdrant, BM25, PostgreSQL 18, Docker Compose

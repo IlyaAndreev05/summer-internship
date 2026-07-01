@@ -1,15 +1,13 @@
-FROM ghcr.io/astral-sh/uv:latest AS uv
-
-FROM python:3.13-slim
+FROM python:3.14.6-slim
 
 WORKDIR /app
 
-COPY --from=uv /uv /usr/local/bin/uv
+RUN pip install uv --no-cache-dir
 
-COPY pyproject.toml uv.lock* ./
+COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-dev
 
 COPY src/ ./src/
 RUN mkdir -p data docs projects tests
 
-CMD ["uv", "run", "alina-rag", "console"]
+CMD ["sleep", "infinity"]
