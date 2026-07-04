@@ -16,6 +16,7 @@ COL_ANSWER_ALT = "Ответ"
 
 
 def _read_file(path: Path) -> pd.DataFrame:
+    """Чтение файла вопросов (CSV или Excel)."""
     suffix = path.suffix.lower()
     if suffix == ".csv":
         return pd.read_csv(path, encoding="utf-8")
@@ -23,6 +24,7 @@ def _read_file(path: Path) -> pd.DataFrame:
 
 
 def _write_file(df: pd.DataFrame, path: Path) -> None:
+    """Запись DataFrame в файл (CSV или Excel)."""
     suffix = path.suffix.lower()
     if suffix == ".csv":
         df.to_csv(path, index=False, encoding="utf-8")
@@ -31,6 +33,7 @@ def _write_file(df: pd.DataFrame, path: Path) -> None:
 
 
 def run_batch(agent: RAGAgent) -> None:
+    """Пакетная обработка вопросов из файлов: заполняет ответы агента."""
     tests_dir = settings.tests_path
     if not tests_dir.exists():
         logger.error("Tests directory not found: %s", tests_dir)

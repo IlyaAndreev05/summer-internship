@@ -33,6 +33,8 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     deploy:
       resources:
         limits:

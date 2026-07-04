@@ -4,6 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    """Настройки приложения, загружаемые из .env."""
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -38,18 +39,22 @@ class Settings(BaseSettings):
 
     @property
     def ollama_host(self) -> str:
+        """URL хоста Ollama без завершающего слеша."""
         return self.llm_base_url.rstrip("/")
 
     @property
     def docs_path(self) -> Path:
+        """Путь к директории с документами."""
         return Path(self.docs_dir)
 
     @property
     def projects_path(self) -> Path:
+        """Путь к директории с проектами."""
         return Path(self.projects_dir)
 
     @property
     def tests_path(self) -> Path:
+        """Путь к директории с тестами."""
         return Path(self.tests_dir)
 
 

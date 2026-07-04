@@ -1,8 +1,6 @@
 import logging
-import pickle
 import re
 from collections.abc import Callable
-from pathlib import Path
 
 from langchain_core.documents import Document
 from langchain_ollama import ChatOllama, OllamaEmbeddings
@@ -12,50 +10,31 @@ from qdrant_client.models import Distance, VectorParams
 from rank_bm25 import BM25Okapi
 
 from alina_rag.config import settings
+from alina_rag.db import load_all_chunks
 from alina_rag.prompts import SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
 
 def _tokenize(text: str) -> list[str]:
+    """Токенизация текста: нижний регистр, кириллица и латиница с цифрами."""
     return re.findall(r"[а-яёa-z0-9]+", text.lower())
 
 
-class BM25Store:
-    def __init__(self, persist_path: str = "data/bm25_index.pkl"):
-        self._chunks: list[str] = []
-        self._metadatas: list[dict] = []
-        self._bm25: BM25Okapi | None = None
-        self._persist_path = Path(persist_path)
-        self._tokenized: list[list[str]] = []
-        if self._persist_path.exists():
-            self._load()
+class BM25Search:
+    """In-memory BM25 index built from Postgres chunks on startup."""
 
-    def _load(self):
-        try:
-            with open(self._persist_path, "rb") as f:
-                data = pickle.load(f)
-            self._chunks = data.get("chunks", [])
-            self._metadatas = data.get("metadatas", [])
-            self._tokenized = [_tokenize(c) for c in self._chunks]
-            if self._tokenized:
-                self._bm25 = BM25Okapi(self._tokenized)
-        except Exception:
-            logger.warning("Failed to load BM25 index, starting fresh")
-
-    def _save(self):
-        self._persist_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self._persist_path, "wb") as f:
-            pickle.dump({"chunks": self._chunks, "metadatas": self._metadatas}, f)
-
-    def add_chunks(self, chunks: list[str], metadatas: list[dict]):
-        self._chunks.extend(chunks)
-        self._metadatas.extend(metadatas)
-        self._tokenized.extend([_tokenize(c) for c in chunks])
-        self._bm25 = BM25Okapi(self._tokenized)
-        self._save()
+    def __init__(self):
+        """Инициализирует BM25-индекс из чанков в базе."""
+        rows = load_all_chunks()  # (id, source, filename, chunk_text, chunk_index)
+        self._chunks: list[str] = [r[3] for r in rows]
+        self._metadatas: list[dict] = [{"source": r[1], "filename": r[2]} for r in rows]
+        tokenized = [_tokenize(c) for c in self._chunks]
+        self._bm25: BM25Okapi | None = BM25Okapi(tokenized) if tokenized else None
+        logger.info("BM25 index built from %d chunks", len(self._chunks))
 
     def search(self, query: str, top_k: int = 5) -> list[Document]:
+        """Поиск по BM25 с возвратом top_k документов."""
         if not self._bm25:
             return []
         tokenized = _tokenize(query)
@@ -67,32 +46,18 @@ class BM25Store:
                 results.append(
                     Document(
                         page_content=self._chunks[idx],
-                        metadata=self._metadatas[idx] if idx < len(self._metadatas) else {},
+                        metadata=self._metadatas[idx],
                     )
                 )
         return results
 
     def count(self) -> int:
+        """Количество чанков в индексе."""
         return len(self._chunks)
-
-    def remove_by_source(self, source: str) -> int:
-        """Remove all chunks whose metadata['source'] matches. Returns count removed."""
-        keep = [
-            i for i, m in enumerate(self._metadatas)
-            if m.get("source") != source
-        ]
-        removed = len(self._chunks) - len(keep)
-        if removed == 0:
-            return 0
-        self._chunks = [self._chunks[i] for i in keep]
-        self._metadatas = [self._metadatas[i] for i in keep]
-        self._tokenized = [self._tokenized[i] for i in keep]
-        self._bm25 = BM25Okapi(self._tokenized) if self._tokenized else None
-        self._save()
-        return removed
 
 
 def _build_qdrant() -> QdrantVectorStore:
+    """Создаёт и настраивает векторное хранилище Qdrant."""
     client = QdrantClient(url=settings.qdrant_url)
     embeddings = OllamaEmbeddings(
         model=settings.embed_model,
@@ -113,6 +78,7 @@ def _build_qdrant() -> QdrantVectorStore:
 
 
 def _build_llm() -> ChatOllama:
+    """Создаёт LLM-клиент Ollama."""
     return ChatOllama(
         model=settings.llm_model,
         base_url=settings.ollama_host,
@@ -120,15 +86,13 @@ def _build_llm() -> ChatOllama:
     )
 
 
-def _build_bm25() -> BM25Store:
-    return BM25Store()
-
-
 class RAGAgent:
+    """RAG-агент: векторный + BM25 поиск и генерация ответов."""
     def __init__(self):
+        """Инициализирует LLM, векторное хранилище и BM25-индекс."""
         self._llm = _build_llm()
         self._vector_store = _build_qdrant()
-        self._bm25 = _build_bm25()
+        self._bm25 = BM25Search()
 
     def answer(
         self,
@@ -136,6 +100,7 @@ class RAGAgent:
         history: list[dict] | None = None,
         step_callback: Callable | None = None,
     ) -> str:
+        """Генерирует ответ на вопрос с учётом истории и найденного контекста."""
         vector_results = self._vector_store.similarity_search(question, k=5)
         bm25_results = self._bm25.search(question, top_k=5)
 
@@ -185,23 +150,9 @@ class RAGAgent:
         return response.content
 
     def get_vector_store(self) -> QdrantVectorStore:
+        """Возвращает векторное хранилище Qdrant."""
         return self._vector_store
 
-    def get_bm25_store(self) -> BM25Store:
-        return self._bm25
-
-    def remove_by_source(self, source: str) -> None:
-        """Remove all chunks for a given source from both Qdrant and BM25."""
-        from qdrant_client.models import FieldCondition, Filter, MatchValue
-
-        self._vector_store.client.delete(
-            collection_name=settings.qdrant_collection,
-            points_selector=Filter(
-                must=[FieldCondition(key="metadata.source", match=MatchValue(value=source))]
-            ),
-        )
-        self._bm25.remove_by_source(source)
-        logger.info("Removed chunks for source: %s", source)
-
     def get_llm(self) -> ChatOllama:
+        """Возвращает экземпляр LLM."""
         return self._llm

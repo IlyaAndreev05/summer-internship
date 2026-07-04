@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
+    """Запуск приложения в выбранном режиме."""
     mode = settings.app_mode.lower()
     logger.info("Starting in %s mode", mode)
 

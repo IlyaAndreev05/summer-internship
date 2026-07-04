@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 def run_console(agent: RAGAgent, verbose: bool = False) -> None:
+    """Запуск интерактивной консоли для общения с агентом."""
     console = Console()
     history: list[dict] = []
 
@@ -49,6 +50,7 @@ def run_console(agent: RAGAgent, verbose: bool = False) -> None:
             continue
 
         def step_cb(step, _verbose: bool = verbose):
+            """Callback для вывода информации о поиске в verbose-режиме."""
             if not _verbose:
                 return
             if step.get("type") == "search":
