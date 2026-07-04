@@ -5,9 +5,10 @@ WORKDIR /app
 RUN pip install uv --no-cache-dir
 
 COPY pyproject.toml uv.lock README.md ./
+COPY src/ ./src/
+
 RUN uv sync --frozen --no-dev
 
-COPY src/ ./src/
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh && mkdir -p data docs projects tests
 

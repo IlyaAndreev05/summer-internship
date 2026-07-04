@@ -38,7 +38,7 @@ services:
         limits:
           memory: 2G
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f 'python -m alina_rag' || exit 1"]
+      test: ["CMD-SHELL", "kill -0 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -46,8 +46,6 @@ services:
   ollama:
     <<: [*common, *logging, *env]
     image: ollama/ollama:0.31.1
-    ports:
-      - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
     environment:
@@ -65,7 +63,7 @@ services:
         limits:
           memory: 8G
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/11434'"]
       interval: 15s
       timeout: 10s
       retries: 5
@@ -83,14 +81,14 @@ services:
         limits:
           memory: 1G
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/6333'"]
       interval: 15s
       timeout: 10s
       retries: 5
 
   postgres:
     <<: [*common, *logging, *env]
-    image: postgres:18
+    image: postgres:17
     ports:
       - "5432:5432"
     environment:
