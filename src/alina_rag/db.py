@@ -34,6 +34,8 @@ def init_tables() -> None:
                 UNIQUE(source, chunk_index)
             )
         """)
+        cur.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_chunks_text_trgm ON chunks USING gin (chunk_text gin_trgm_ops)")
         conn.commit()
     logger.info("Database tables initialized")
 
@@ -85,6 +87,19 @@ def load_all_chunks() -> list[tuple[int, str, str, str, int]]:
     """Load all chunks: (id, source, filename, chunk_text, chunk_index)."""
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("SELECT id, source, filename, chunk_text, chunk_index FROM chunks ORDER BY source, chunk_index")
+        return cur.fetchall()
+
+
+def trigram_search(query: str, top_k: int = 5) -> list[tuple[int, str, str, str, int]]:
+    """Fuzzy text search using pg_trgm. Returns (id, source, filename, chunk_text, chunk_index)."""
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """SELECT id, source, filename, chunk_text, chunk_index
+               FROM chunks
+               ORDER BY similarity(chunk_text, %s) DESC
+               LIMIT %s""",
+            (query, top_k),
+        )
         return cur.fetchall()
 
 

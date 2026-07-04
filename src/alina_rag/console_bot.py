@@ -16,9 +16,9 @@ def run_console(agent: RAGAgent, verbose: bool = False) -> None:
     history: list[dict] = []
 
     console.print()
-    console.print("[bold cyan]╔════════════════════════════════════════════╗[/]")
-    console.print("[bold cyan]║[/]    [bold yellow]ALINA GPSS AI Консультант[/]   [bold cyan]║[/]")
-    console.print("[bold cyan]╚════════════════════════════════════════════╝[/]")
+    console.print("[bold cyan]╔════════════════════════════════════════════════╗[/]")
+    console.print("[bold cyan]║[/]    [bold yellow]ALINA GPSS AI Консультант[/]              [bold cyan]║[/]")
+    console.print("[bold cyan]╚════════════════════════════════════════════════╝[/]")
     console.print("[dim]/exit — выход    /clear — очистить историю    /verbose — показать поиск[/]")
     console.print()
 

@@ -90,15 +90,13 @@ services:
 
   postgres:
     <<: [*common, *logging, *env]
-    image: postgres:17
-    ports:
-      - "5432:5432"
+    image: postgres:18
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-alina}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-alina}
       - POSTGRES_DB=${POSTGRES_DB:-alina}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     deploy:
       resources:
         limits:

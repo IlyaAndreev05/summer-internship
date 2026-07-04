@@ -5,9 +5,11 @@ from alina_rag.batch_mode import run_batch
 from alina_rag.config import settings
 from alina_rag.console_bot import run_console
 from alina_rag.test_mode import run_tests
-from alina_rag.vk_bot import run_vk_bot
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+# Подавляем шумные логи httpx/qdrant/ollama
+for _noise in ("httpx", "httpcore", "ollama", "qdrant_client"):
+    logging.getLogger(_noise).setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
@@ -22,9 +24,6 @@ def main() -> None:
         agent = RAGAgent()
         run_vk_bot(agent, token=settings.vk_token, group_id=settings.vk_group_id)
 
-    elif mode == "test":
-        agent = RAGAgent()
-        run_tests(agent)
 
     elif mode == "batch":
         agent = RAGAgent()
@@ -34,6 +33,10 @@ def main() -> None:
     elif mode == "console":
         agent = RAGAgent()
         run_console(agent, verbose=settings.chat_verbose)
+
+    elif mode == "test":
+        agent = RAGAgent()
+        run_tests(agent)
 
     else:
         raise SystemExit(f"Unknown APP_MODE: {mode}. Use: console, vk, test, batch")
