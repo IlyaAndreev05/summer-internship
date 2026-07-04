@@ -24,7 +24,6 @@ services:
       - PYTHONUNBUFFERED=1
       - APP_MODE=${APP_MODE:-console}
     volumes:
-      - ./docs:/app/docs:ro
       - ./projects:/app/projects:ro
       - ./tests:/app/tests:ro
       - ./data:/app/data

@@ -3,9 +3,9 @@ from pathlib import Path
 
 from langchain_community.document_loaders import (
     CSVLoader,
-    PyPDFLoader,
     TextLoader,
 )
+from langchain_community.document_loaders.pdf import PyMuPDFLoader
 from langchain_community.document_loaders.excel import UnstructuredExcelLoader
 from langchain_community.document_loaders.word_document import UnstructuredWordDocumentLoader
 from langchain_core.documents import Document
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 SUPPORTED_EXTS = {
     ".txt": (TextLoader, {"autodetect_encoding": True}),
     ".md": (TextLoader, {"autodetect_encoding": True}),
-    ".pdf": (PyPDFLoader, {}),
+    ".pdf": (PyMuPDFLoader, {}),
     ".docx": (UnstructuredWordDocumentLoader, {}),
     ".doc": (UnstructuredWordDocumentLoader, {}),
     ".xlsx": (UnstructuredExcelLoader, {}),

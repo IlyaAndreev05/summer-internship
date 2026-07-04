@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     vk_group_id: str = ""
 
     docs_dir: str = "docs"
+    data_dir: str = "data"
     projects_dir: str = "projects"
     tests_dir: str = "tests"
 
@@ -51,6 +52,10 @@ class Settings(BaseSettings):
     def projects_path(self) -> Path:
         """Путь к директории с проектами."""
         return Path(self.projects_dir)
+    @property
+    def data_path(self) -> Path:
+        """Путь к директории с данными."""
+        return Path(self.data_dir)
 
     @property
     def tests_path(self) -> Path:

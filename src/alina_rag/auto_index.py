@@ -27,9 +27,9 @@ def _file_hash(path: Path) -> str:
 
 
 def _collect_files() -> list[Path]:
-    """Обходит docs/ и projects/, возвращает список поддерживаемых файлов."""
+    """Обходит data/ и projects/, возвращает список поддерживаемых файлов."""
     files: list[Path] = []
-    for root in [settings.docs_path, settings.projects_path]:
+    for root in [settings.data_path, settings.projects_path]:
         if not root.exists():
             continue
         for path in sorted(root.rglob("*")):
