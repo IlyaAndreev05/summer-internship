@@ -2,8 +2,12 @@ import hashlib
 import logging
 from pathlib import Path
 
+from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from qdrant_client import QdrantClient
+from qdrant_client.models import Distance, FieldCondition, Filter, MatchValue, VectorParams
 
+from alina_rag.agent import RAGAgent
 from alina_rag.config import settings
 from alina_rag.db import (
     delete_chunks_by_source,
@@ -11,6 +15,7 @@ from alina_rag.db import (
     get_file_hashes,
     init_tables,
     insert_chunks,
+    load_all_chunks,
     upsert_file,
 )
 from alina_rag.indexer import SUPPORTED_EXTS, _load_file
@@ -37,6 +42,38 @@ def _collect_files() -> list[Path]:
                 files.append(path)
     return files
 
+
+def _sync_vectors(expected_count: int) -> None:
+    """Re-insert all Postgres chunks into Qdrant (batch by source file)."""
+    agent = RAGAgent()
+    vector_store = agent.get_vector_store()
+
+    # Очищаем Qdrant и перезаполняем
+    vector_store.client.delete_collection(settings.qdrant_collection)
+    vector_store.client.create_collection(
+        collection_name=settings.qdrant_collection,
+        vectors_config=VectorParams(size=768, distance=Distance.COSINE),
+    )
+
+    rows = load_all_chunks()
+    docs = [
+        Document(page_content=r[3], metadata={"source": r[1], "filename": r[2]})
+        for r in rows
+    ]
+
+    # Batch insert (по 100 документов за раз)
+    batch_size = 100
+    total = len(docs)
+    for i in range(0, total, batch_size):
+        batch = docs[i : i + batch_size]
+        vector_store.add_documents(batch)
+        done = min(i + batch_size, total)
+        remaining = total - done
+        logger.info("Synced vectors: %d/%d (осталось %d)", done, total, remaining)
+        print(f"\r  ⏳ Векторы: {done}/{total} (осталось {total - done})", end="", flush=True)
+
+    print()
+    logger.info("Vector sync complete: %d points inserted into Qdrant", total)
 
 def auto_index() -> None:
     """Индексирует новые/изменённые файлы с дедупликацией через Postgres."""
@@ -65,18 +102,31 @@ def auto_index() -> None:
 
         if source not in registry:
             new_files.append(path)
-        elif registry[source] != file_hash:
-            changed_files.append(path)
 
     deleted_sources = set(registry) - set(current)
 
     if not new_files and not changed_files and not deleted_sources:
+        # Проверяем консистентность: чанки в Postgres vs векторы в Qdrant
+        pg_count = len(load_all_chunks())
+        client = QdrantClient(url=settings.qdrant_url)
+        try:
+            qdrant_count = client.get_collection(settings.qdrant_collection).points_count
+        except Exception:
+            qdrant_count = 0
+
+        if pg_count > 0 and qdrant_count < pg_count:
+            logger.warning(
+                "Qdrant vector mismatch: %d chunks in Postgres vs %d points in Qdrant. Re-syncing vectors.",
+                pg_count, qdrant_count,
+            )
+            _sync_vectors(pg_count)
+            return
+
         logger.info("All %d files up to date", len(files))
         return
 
     logger.info("Indexing: %d new, %d changed, %d deleted", len(new_files), len(changed_files), len(deleted_sources))
 
-    from alina_rag.agent import RAGAgent
 
     agent = RAGAgent()
     vector_store = agent.get_vector_store()
@@ -84,8 +134,6 @@ def auto_index() -> None:
     # Удаляем векторы изменённых/удалённых файлов из Qdrant
     for source in list(deleted_sources) + [str(p) for p in changed_files]:
         try:
-            from qdrant_client.models import FieldCondition, Filter, MatchValue
-
             vector_store.client.delete(
                 collection_name=settings.qdrant_collection,
                 points_selector=Filter(

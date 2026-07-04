@@ -303,11 +303,15 @@ class RAGAgent:
                         "iteration": iteration,
                     })
 
+                # Оставляем только Thought до Action, убираем преждевременный Final Answer
+                truncated = content[: match.start()].rstrip()
+                if truncated:
+                    messages.append(AIMessage(content=truncated))
+
                 # Inject tool result as user message so LLM can continue
                 tool_msg = (
                     f"Результат поиска {tool_name}(\"{query_val}\"):\n\n{result}\n\n"
-                    "Проанализируй результат и либо вызови другой инструмент, "
-                    "либо дай Final Answer."
+                    "Проанализируй результат и дай Final Answer."
                 )
                 messages.append(HumanMessage(content=tool_msg))
                 continue  # next iteration
