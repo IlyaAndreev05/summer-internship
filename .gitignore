@@ -222,8 +222,4 @@ __marimo__/
 banks/
 
 # Project data (runtime artifacts)
-data/chroma/
-data/documents/
-data/chat_history.db
-data/chat_history.db-journal
-data/chat_history.db-wal
+data/
