@@ -53,10 +53,10 @@ def run_console(agent: RAGAgent, verbose: bool = False) -> None:
             """Callback для вывода информации о поиске в verbose-режиме."""
             if not _verbose:
                 return
-            if step.get("type") == "search":
+            if step.get("type") == "tool_call":
                 console.print(
                     Text(
-                        f"  🔍 Найдено: {step.get('vector_count', 0)} (вектор) + {step.get('bm25_count', 0)} (BM25)",
+                        f"  🔍 {step.get('tool', '?')}(\"{step.get('query', '')}\") [итерация {step.get('iteration', 0)+1}]",
                         style="dim yellow",
                     )
                 )
