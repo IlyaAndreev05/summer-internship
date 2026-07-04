@@ -75,6 +75,22 @@ class BM25Store:
     def count(self) -> int:
         return len(self._chunks)
 
+    def remove_by_source(self, source: str) -> int:
+        """Remove all chunks whose metadata['source'] matches. Returns count removed."""
+        keep = [
+            i for i, m in enumerate(self._metadatas)
+            if m.get("source") != source
+        ]
+        removed = len(self._chunks) - len(keep)
+        if removed == 0:
+            return 0
+        self._chunks = [self._chunks[i] for i in keep]
+        self._metadatas = [self._metadatas[i] for i in keep]
+        self._tokenized = [self._tokenized[i] for i in keep]
+        self._bm25 = BM25Okapi(self._tokenized) if self._tokenized else None
+        self._save()
+        return removed
+
 
 def _build_qdrant() -> QdrantVectorStore:
     client = QdrantClient(url=settings.qdrant_url)
@@ -173,6 +189,19 @@ class RAGAgent:
 
     def get_bm25_store(self) -> BM25Store:
         return self._bm25
+
+    def remove_by_source(self, source: str) -> None:
+        """Remove all chunks for a given source from both Qdrant and BM25."""
+        from qdrant_client.models import FieldCondition, Filter, MatchValue
+
+        self._vector_store.client.delete(
+            collection_name=settings.qdrant_collection,
+            points_selector=Filter(
+                must=[FieldCondition(key="metadata.source", match=MatchValue(value=source))]
+            ),
+        )
+        self._bm25.remove_by_source(source)
+        logger.info("Removed chunks for source: %s", source)
 
     def get_llm(self) -> ChatOllama:
         return self._llm

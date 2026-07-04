@@ -10,6 +10,8 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    app_mode: str = "console"  # console | vk | test | batch
+
     llm_provider: str = "ollama"
     llm_model: str = "qwen2.5:1.5b"
     llm_base_url: str = "http://localhost:11434"

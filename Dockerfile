@@ -8,6 +8,7 @@ COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-dev
 
 COPY src/ ./src/
-RUN mkdir -p data docs projects tests
+COPY docker-entrypoint.sh ./
+RUN chmod +x docker-entrypoint.sh && mkdir -p data docs projects tests
 
-CMD ["sleep", "infinity"]
+ENTRYPOINT ["./docker-entrypoint.sh"]
