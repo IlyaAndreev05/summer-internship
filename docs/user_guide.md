@@ -7,7 +7,7 @@
 Если система уже установлена администратором, подключитесь к контейнеру и запустите интерактивную консоль:
 
 ```bash
-docker compose exec -it app uv run alina-rag console
+docker compose exec -it app gpss-helper console
 ```
 
 После запуска вы увидите приветствие:

@@ -157,7 +157,7 @@ docker compose logs -f ollama
 ### 5.3. Интерактивная консоль
 
 ```bash
-docker compose exec -it app uv run alina-rag console
+docker compose exec -it app gpss-helper console
 ```
 
 Внутри консоли доступны команды:
@@ -173,7 +173,7 @@ docker compose exec -it app uv run alina-rag console
 Поместите файлы с вопросами в `tests/`. Формат: CSV или Excel с колонками `№`, `Вопрос`, `Ответ` (колонка «Ответ» заполняется автоматически).
 
 ```bash
-docker compose exec app uv run alina-rag batch
+docker compose exec app gpss-helper batch
 ```
 
 Результат сохраняется в файлы `*_filled.*` в директории `tests/`.
@@ -191,7 +191,7 @@ APP_MODE=vk
 Запуск:
 
 ```bash
-docker compose exec app uv run alina-rag vk
+docker compose exec app gpss-helper vk
 ```
 
 ## 6. Типичные ошибки и решения

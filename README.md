@@ -55,7 +55,7 @@ Ollama автоматически скачает модели `qwen2.5:1.5b` и 
 ### 4. Задать вопрос
 
 ```bash
-docker compose exec -it app uv run alina-rag console
+docker compose exec -it app gpss-helper console
 ```
 
 ```
@@ -68,10 +68,10 @@ docker compose exec -it app uv run alina-rag console
 
 | Режим | Запуск | Описание |
 |---|---|---|
-| `console` | `docker compose exec -it app uv run alina-rag console` | Интерактивный чат в терминале |
-| `batch` | `docker compose exec app uv run alina-rag batch` | Пакетная обработка вопросов из файлов в `tests/` |
-| `vk` | `docker compose exec app uv run alina-rag vk` | VK-бот (требуются `VK_TOKEN` и `VK_GROUP_ID`) |
-| `test` | `docker compose exec app uv run alina-rag test` | Тестирование с самооценкой (LLM-судья, 1-10) |
+| `console` | `docker compose exec -it app gpss-helper console` | Интерактивный чат в терминале |
+| `batch` | `docker compose exec app gpss-helper batch` | Пакетная обработка вопросов из файлов в `tests/` |
+| `vk` | `docker compose exec app gpss-helper vk` | VK-бот (требуются `VK_TOKEN` и `VK_GROUP_ID`) |
+| `test` | `docker compose exec app gpss-helper test` | Тестирование с самооценкой (LLM-судья, 1-10) |
 
 Команды внутри консоли: `/exit`, `/clear`, `/verbose`.
 
@@ -158,7 +158,7 @@ cp .env.example .env
 # POSTGRES_URL=postgresql://alina:alina@localhost:5432/alina
 
 uv sync
-uv run alina-rag console
+gpss-helper console
 ```
 
 ## Документация
@@ -173,7 +173,7 @@ uv run alina-rag console
 ### Автоматическое тестирование (LLM-судья)
 
 ```bash
-docker compose exec app uv run alina-rag test
+docker compose exec app gpss-helper test
 ```
 
 Режим `test` читает вопросы из `tests/`, генерирует ответы агента, затем LLM-судья сравнивает с эталоном и ставит оценку 1–10. Результат: `*_scored.*` в `tests/` + статистика в консоли.

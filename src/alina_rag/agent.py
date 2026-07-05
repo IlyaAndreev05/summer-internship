@@ -311,7 +311,7 @@ class RAGAgent:
                 # Inject tool result as user message so LLM can continue
                 tool_msg = (
                     f"Результат поиска {tool_name}(\"{query_val}\"):\n\n{result}\n\n"
-                    "Проанализируй результат и дай Final Answer."
+                    "Проанализируй результат и дай краткий ответ без нумерации [1] и без указания источников."
                 )
                 messages.append(HumanMessage(content=tool_msg))
                 continue  # next iteration
