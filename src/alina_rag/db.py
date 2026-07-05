@@ -9,12 +9,12 @@ logger = logging.getLogger(__name__)
 
 
 def get_conn():
-    """Get a new Postgres connection."""
+    """Новое соединение с Postgres."""
     return psycopg2.connect(settings.postgres_url)
 
 
 def init_tables() -> None:
-    """Create tables if they don't exist."""
+    """Создание таблиц при первом запуске."""
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("""
             CREATE TABLE IF NOT EXISTS indexed_files (
@@ -41,14 +41,14 @@ def init_tables() -> None:
 
 
 def get_file_hashes() -> dict[str, str]:
-    """Return {source: file_hash} for all indexed files."""
+    """Хеши всех индексированных файлов."""
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("SELECT source, file_hash FROM indexed_files")
         return dict(cur.fetchall())
 
 
 def upsert_file(source: str, filename: str, file_hash: str) -> None:
-    """Insert or update a file record."""
+    """Добавление или обновление записи файла."""
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("""
             INSERT INTO indexed_files (source, filename, file_hash)
@@ -59,14 +59,14 @@ def upsert_file(source: str, filename: str, file_hash: str) -> None:
 
 
 def delete_file(source: str) -> None:
-    """Delete a file and its chunks (CASCADE)."""
+    """Удаление файла и его чанков."""
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("DELETE FROM indexed_files WHERE source = %s", (source,))
         conn.commit()
 
 
 def insert_chunks(source: str, filename: str, texts: list[str]) -> None:
-    """Insert chunks for a file. Assumes old chunks are already deleted."""
+    """Вставка чанков файла."""
     with get_conn() as conn, conn.cursor() as cur:
         psycopg2.extras.execute_values(
             cur,
@@ -77,21 +77,21 @@ def insert_chunks(source: str, filename: str, texts: list[str]) -> None:
 
 
 def delete_chunks_by_source(source: str) -> None:
-    """Delete all chunks for a given source."""
+    """Удаление всех чанков источника."""
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("DELETE FROM chunks WHERE source = %s", (source,))
         conn.commit()
 
 
 def load_all_chunks() -> list[tuple[int, str, str, str, int]]:
-    """Load all chunks: (id, source, filename, chunk_text, chunk_index)."""
+    """Загрузка всех чанков."""
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("SELECT id, source, filename, chunk_text, chunk_index FROM chunks ORDER BY source, chunk_index")
         return cur.fetchall()
 
 
 def trigram_search(query: str, top_k: int = 5) -> list[tuple[int, str, str, str, int]]:
-    """Fuzzy text search using pg_trgm. Returns (id, source, filename, chunk_text, chunk_index)."""
+    """Нечёткий поиск по триграммам."""
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """SELECT id, source, filename, chunk_text, chunk_index
@@ -104,7 +104,7 @@ def trigram_search(query: str, top_k: int = 5) -> list[tuple[int, str, str, str,
 
 
 def get_chunk_ids_by_source(source: str) -> list[int]:
-    """Get all chunk IDs for a given source."""
+    """ID чанков источника."""
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("SELECT id FROM chunks WHERE source = %s ORDER BY chunk_index", (source,))
         return [row[0] for row in cur.fetchall()]

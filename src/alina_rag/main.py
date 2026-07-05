@@ -8,7 +8,6 @@ from alina_rag.test_mode import run_tests
 from alina_rag.vk_bot import run_vk_bot
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-# Подавляем шумные логи httpx/qdrant/ollama
 for _noise in ("httpx", "httpcore", "ollama", "qdrant_client"):
     logging.getLogger(_noise).setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)

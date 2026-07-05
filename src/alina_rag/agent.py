@@ -19,26 +19,19 @@ logger = logging.getLogger(__name__)
 
 MAX_ITERATIONS = 5
 
-# ---------------------------------------------------------------------------
-# Tokenizer
-# ---------------------------------------------------------------------------
 
 def _tokenize(text: str) -> list[str]:
     """Токенизация текста: нижний регистр, кириллица и латиница с цифрами."""
     return re.findall(r"[а-яёa-z0-9]+", text.lower())
 
 
-# ---------------------------------------------------------------------------
-# Lazy BM25 singleton
-# ---------------------------------------------------------------------------
-
 _bm25_cache: dict[str, Any] = {}
 
 
 def _get_bm25() -> tuple[list[str], list[dict], BM25Okapi | None]:
-    """Return (chunks, metadatas, model) for BM25, building index on first call."""
+    """Возвращает чанки, метаданные и модель BM25, строит индекс при первом вызове."""
     if "model" not in _bm25_cache:
-        rows = load_all_chunks()  # (id, source, filename, chunk_text, chunk_index)
+        rows = load_all_chunks()
         chunks = [r[3] for r in rows]
         metadatas = [{"source": r[1], "filename": r[2]} for r in rows]
         tokenized = [_tokenize(c) for c in chunks]
@@ -51,7 +44,7 @@ def _get_bm25() -> tuple[list[str], list[dict], BM25Okapi | None]:
 
 
 def bm25_search(query: str, top_k: int = 5) -> list[Document]:
-    """BM25 keyword search across all chunks."""
+    """Ключевой поиск по BM25."""
     chunks, metadatas, model = _get_bm25()
     if not model:
         return []
@@ -66,10 +59,6 @@ def bm25_search(query: str, top_k: int = 5) -> list[Document]:
             )
     return results
 
-
-# ---------------------------------------------------------------------------
-# Builders (module-level, reused by auto_index etc.)
-# ---------------------------------------------------------------------------
 
 def _build_qdrant() -> QdrantVectorStore:
     """Создаёт и настраивает векторное хранилище Qdrant."""
@@ -100,10 +89,6 @@ def _build_llm() -> ChatOllama:
         temperature=0.1,
     )
 
-
-# ---------------------------------------------------------------------------
-# Tool definitions (LangChain FunctionTool format)
-# ---------------------------------------------------------------------------
 
 TOOLS_SCHEMA = [
     {
@@ -159,16 +144,11 @@ TOOLS_SCHEMA = [
     },
 ]
 
-# Pre-compiled pattern for parsing fallback
 _ACTION_RE = re.compile(
     r'Action:\s*(search_vector|search_keywords|search_bm25)\s*\(\s*["\'](.+?)["\']\s*\)',
     re.IGNORECASE,
 )
 
-
-# ---------------------------------------------------------------------------
-# RAGAgent
-# ---------------------------------------------------------------------------
 
 class RAGAgent:
     """ReAct RAG-агент: LLM решает когда и как искать."""
@@ -178,10 +158,8 @@ class RAGAgent:
         self._llm = _build_llm()
         self._vector_store = _build_qdrant()
 
-    # -- Tool implementations ------------------------------------------------
-
     def _search_vector(self, query: str) -> str:
-        """Semantic vector search via Qdrant."""
+        """Семантический поиск по векторам."""
         results = self._vector_store.similarity_search(query, k=5)
         if not results:
             return "Ничего не найдено."
@@ -192,7 +170,7 @@ class RAGAgent:
         return "\n\n".join(parts)
 
     def _search_keywords(self, query: str) -> str:
-        """Trigram fuzzy search via PostgreSQL."""
+        """Нечёткий поиск по триграммам."""
         rows = trigram_search(query, top_k=5)
         if not rows:
             return "Ничего не найдено."
@@ -203,7 +181,7 @@ class RAGAgent:
         return "\n\n".join(parts)
 
     def _search_bm25(self, query: str) -> str:
-        """BM25 keyword search."""
+        """Ключевой поиск по BM25."""
         results = bm25_search(query, top_k=5)
         if not results:
             return "Ничего не найдено."
@@ -214,7 +192,7 @@ class RAGAgent:
         return "\n\n".join(parts)
 
     def _execute_tool(self, name: str, query: str) -> str:
-        """Dispatch a tool call by name."""
+        """Вызов инструмента по имени."""
         dispatch = {
             "search_vector": self._search_vector,
             "search_keywords": self._search_keywords,
@@ -225,15 +203,13 @@ class RAGAgent:
             return f"Неизвестный инструмент: {name}"
         return fn(query)
 
-    # -- ReAct loop ----------------------------------------------------------
-
     def answer(
         self,
         question: str,
         history: list[dict] | None = None,
         step_callback: Callable | None = None,
     ) -> str:
-        """ReAct loop: LLM decides when/how to search, executes tools, returns answer."""
+        """ReAct-цикл: LLM решает когда искать, выполняет инструменты, возвращает ответ."""
         messages: list = [SystemMessage(content=SYSTEM_PROMPT)]
 
         if history:
@@ -246,14 +222,12 @@ class RAGAgent:
         messages.append(HumanMessage(content=question))
 
         for iteration in range(MAX_ITERATIONS):
-            # --- Try native tool calling first ---
             try:
                 llm_with_tools = self._llm.bind_tools(TOOLS_SCHEMA)
                 response: AIMessage = llm_with_tools.invoke(messages)
             except Exception:
                 response = self._llm.invoke(messages)
 
-            # --- Native tool calls ---
             if hasattr(response, "tool_calls") and response.tool_calls:
                 messages.append(response)
                 for tc in response.tool_calls:
@@ -283,9 +257,8 @@ class RAGAgent:
                         content=result,
                         tool_call_id=tool_call_id,
                     ))
-                continue  # next iteration — LLM sees tool results
+                continue
 
-            # --- Parsing fallback: look for Action: search_xxx("query") ---
             content = response.content if isinstance(response.content, str) else str(response.content)
             match = _ACTION_RE.search(content)
             if match:
@@ -303,27 +276,21 @@ class RAGAgent:
                         "iteration": iteration,
                     })
 
-                # Оставляем только Thought до Action, убираем преждевременный Final Answer
                 truncated = content[: match.start()].rstrip()
                 if truncated:
                     messages.append(AIMessage(content=truncated))
 
-                # Inject tool result as user message so LLM can continue
                 tool_msg = (
                     f"Результат поиска {tool_name}(\"{query_val}\"):\n\n{result}\n\n"
                     "Проанализируй результат и дай краткий ответ без нумерации [1] и без указания источников."
                 )
                 messages.append(HumanMessage(content=tool_msg))
-                continue  # next iteration
+                continue
 
-            # --- No tool call, no parsed action → final answer ---
             return content
 
-        # Exhausted iterations — return whatever the LLM last said
         last = messages[-1]
         return last.content if hasattr(last, "content") else str(last)
-
-    # -- Public accessors (used by auto_index) --------------------------------
 
     def get_vector_store(self) -> QdrantVectorStore:
         """Возвращает векторное хранилище Qdrant."""

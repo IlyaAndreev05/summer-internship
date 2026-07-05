@@ -44,11 +44,10 @@ def _collect_files() -> list[Path]:
 
 
 def _sync_vectors(expected_count: int) -> None:
-    """Re-insert all Postgres chunks into Qdrant (batch by source file)."""
+    """Перезапись чанков из Postgres в Qdrant."""
     agent = RAGAgent()
     vector_store = agent.get_vector_store()
 
-    # Очищаем Qdrant и перезаполняем
     vector_store.client.delete_collection(settings.qdrant_collection)
     vector_store.client.create_collection(
         collection_name=settings.qdrant_collection,
@@ -61,7 +60,6 @@ def _sync_vectors(expected_count: int) -> None:
         for r in rows
     ]
 
-    # Batch insert (по 100 документов за раз)
     batch_size = 100
     total = len(docs)
     for i in range(0, total, batch_size):
@@ -106,7 +104,6 @@ def auto_index() -> None:
     deleted_sources = set(registry) - set(current)
 
     if not new_files and not changed_files and not deleted_sources:
-        # Проверяем консистентность: чанки в Postgres vs векторы в Qdrant
         pg_count = len(load_all_chunks())
         client = QdrantClient(url=settings.qdrant_url)
         try:
@@ -131,7 +128,6 @@ def auto_index() -> None:
     agent = RAGAgent()
     vector_store = agent.get_vector_store()
 
-    # Удаляем векторы изменённых/удалённых файлов из Qdrant
     for source in list(deleted_sources) + [str(p) for p in changed_files]:
         try:
             vector_store.client.delete(
@@ -143,11 +139,9 @@ def auto_index() -> None:
         except Exception:
             logger.exception("Failed to remove vectors for: %s", source)
 
-    # Удаляем удалённые файлы из Postgres (CASCADE удаляет чанки)
     for source in deleted_sources:
         delete_file(source)
 
-    # Индексируем новые и изменённые файлы
     to_index = new_files + changed_files
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=settings.chunk_size,
@@ -165,12 +159,10 @@ def auto_index() -> None:
         chunks = splitter.split_documents(docs)
         texts = [doc.page_content for doc in chunks]
 
-        # Сначала upsert_file (создаёт запись в indexed_files), потом insert_chunks (FK)
         upsert_file(source, path.name, _file_hash(path))
         delete_chunks_by_source(source)
         insert_chunks(source, path.name, texts)
 
-        # Векторы в Qdrant
         vector_store.add_documents(chunks)
 
         total_chunks += len(chunks)
