@@ -13,7 +13,6 @@ class Settings(BaseSettings):
 
     app_mode: str = "console"  # console | vk | test | batch
 
-    llm_provider: str = "ollama"
     llm_model: str = "qwen2.5:1.5b"
     llm_base_url: str = "http://localhost:11434"
 
@@ -27,7 +26,6 @@ class Settings(BaseSettings):
     vk_token: str = ""
     vk_group_id: str = ""
 
-    docs_dir: str = "docs"
     data_dir: str = "data"
     projects_dir: str = "projects"
     tests_dir: str = "tests"
@@ -35,18 +33,12 @@ class Settings(BaseSettings):
     chunk_size: int = 500
     chunk_overlap: int = 100
 
-    chat_max_messages: int = 20
     chat_verbose: bool = False
 
     @property
     def ollama_host(self) -> str:
         """URL хоста Ollama без завершающего слеша."""
         return self.llm_base_url.rstrip("/")
-
-    @property
-    def docs_path(self) -> Path:
-        """Путь к директории с документами."""
-        return Path(self.docs_dir)
 
     @property
     def projects_path(self) -> Path:

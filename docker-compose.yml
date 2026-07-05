@@ -91,9 +91,9 @@ services:
     <<: [*common, *logging, *env]
     image: postgres:18
     environment:
-      - POSTGRES_USER=${POSTGRES_USER:-alina}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-alina}
-      - POSTGRES_DB=${POSTGRES_DB:-alina}
+      - POSTGRES_USER=alina
+      - POSTGRES_PASSWORD=alina
+      - POSTGRES_DB=alina
     volumes:
       - postgres_data:/var/lib/postgresql
     deploy:
@@ -101,7 +101,7 @@ services:
         limits:
           memory: 512M
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-alina} -d ${POSTGRES_DB:-alina}"]
+      test: ["CMD-SHELL", "pg_isready -U alina -d alina"]
       interval: 10s
       timeout: 5s
       retries: 5
