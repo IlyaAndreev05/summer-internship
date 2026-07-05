@@ -10,7 +10,6 @@ logger = logging.getLogger(__name__)
 
 
 def run_vk_bot(agent: RAGAgent, token: str, group_id: str) -> None:
-    """Запуск VK-бота для ответов на сообщения в группе."""
     vk_session = VkApi(token=token)
     vk = vk_session.get_api()
 

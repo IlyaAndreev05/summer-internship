@@ -4,14 +4,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Настройки приложения, загружаемые из .env."""
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
-    app_mode: str = "console"  # console | vk | test | batch
+    app_mode: str = "console"
 
     llm_model: str = "qwen2.5:1.5b"
     llm_base_url: str = "http://localhost:11434"
@@ -27,8 +26,6 @@ class Settings(BaseSettings):
     vk_group_id: str = ""
 
     data_dir: str = "data"
-    projects_dir: str = "projects"
-    tests_dir: str = "tests"
 
     chunk_size: int = 500
     chunk_overlap: int = 100
@@ -37,22 +34,27 @@ class Settings(BaseSettings):
 
     @property
     def ollama_host(self) -> str:
-        """URL хоста Ollama без завершающего слеша."""
         return self.llm_base_url.rstrip("/")
 
     @property
-    def projects_path(self) -> Path:
-        """Путь к директории с проектами."""
-        return Path(self.projects_dir)
-    @property
     def data_path(self) -> Path:
-        """Путь к директории с данными."""
         return Path(self.data_dir)
 
     @property
-    def tests_path(self) -> Path:
-        """Путь к директории с тестами."""
-        return Path(self.tests_dir)
+    def docs_path(self) -> Path:
+        return Path("data/docs")
+
+    @property
+    def projects_path(self) -> Path:
+        return Path("data/projects")
+
+    @property
+    def questions_input_path(self) -> Path:
+        return Path("data/questions/input")
+
+    @property
+    def questions_output_path(self) -> Path:
+        return Path("data/questions/output")
 
 
 settings = Settings()

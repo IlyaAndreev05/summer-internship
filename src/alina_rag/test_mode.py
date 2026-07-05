@@ -1,6 +1,3 @@
-import logging
-from pathlib import Path
-
 import pandas as pd
 from rich.console import Console
 from rich.table import Table
@@ -8,9 +5,6 @@ from rich.table import Table
 from alina_rag.agent import RAGAgent
 from alina_rag.config import settings
 
-logger = logging.getLogger(__name__)
-
-COL_NUM = "№"
 COL_QUESTION = "Вопрос"
 COL_ANSWER = "Ответ системы"
 COL_CORRECT = "Правильный ответ"
@@ -33,16 +27,15 @@ SCORE_PROMPT = """Ты — эксперт по оценке качества о�
 Ответ системы: {system_answer}"""
 
 
-def _read_file(path: Path) -> pd.DataFrame:
-    """Чтение тестового файла (CSV или Excel)."""
+def _read_file(path):
     suffix = path.suffix.lower()
     if suffix == ".csv":
         return pd.read_csv(path, encoding="utf-8")
     return pd.read_excel(path)
 
 
-def _write_file(df: pd.DataFrame, path: Path) -> None:
-    """Запись DataFrame в файл (CSV или Excel)."""
+def _write_file(df, path):
+    path.parent.mkdir(parents=True, exist_ok=True)
     suffix = path.suffix.lower()
     if suffix == ".csv":
         df.to_csv(path, index=False, encoding="utf-8")
@@ -50,10 +43,7 @@ def _write_file(df: pd.DataFrame, path: Path) -> None:
         df.to_excel(path, index=False)
 
 
-def _score_answer(
-    agent: RAGAgent, question: str, correct: str, system_answer: str
-) -> tuple[int, str]:
-    """Оценивает ответ системы по сравнению с правильным ответом."""
+def _score_answer(agent, question, correct, system_answer):
     prompt = SCORE_PROMPT.format(
         question=question,
         correct_answer=correct,
@@ -68,7 +58,6 @@ def _score_answer(
         )
         text = response.content
     except Exception:
-        logger.exception("Judge LLM call failed")
         return 0, "Ошибка оценки"
 
     score = 0
@@ -87,18 +76,17 @@ def _score_answer(
     return max(0, min(10, score)), comment
 
 
-def run_tests(agent: RAGAgent) -> None:
-    """Запуск тестирования: вопросы из файлов, ответы агента, оценка LLM."""
-    tests_dir = settings.tests_path
-    if not tests_dir.exists():
-        logger.error("Tests directory not found: %s", tests_dir)
+def run_tests(agent: RAGAgent):
+    input_dir = settings.questions_input_path
+    output_dir = settings.questions_output_path
+
+    if not input_dir.exists():
         return
 
     console = Console()
-    all_scores: list[int] = []
-    all_comments: list[str] = []
+    all_scores = []
 
-    for path in sorted(tests_dir.rglob("*")):
+    for path in sorted(input_dir.rglob("*")):
         if not path.is_file() or path.name.startswith("."):
             continue
         if "_scored" in path.stem or "_filled" in path.stem:
@@ -110,7 +98,6 @@ def run_tests(agent: RAGAgent) -> None:
 
         df = _read_file(path)
         if COL_QUESTION not in df.columns:
-            logger.warning("No '%s' column in %s, skipping", COL_QUESTION, path.name)
             continue
 
         if COL_ANSWER not in df.columns:
@@ -132,9 +119,7 @@ def run_tests(agent: RAGAgent) -> None:
                 try:
                     system_answer = agent.answer(question)
                     df.at[idx, COL_ANSWER] = system_answer
-                    logger.info("Q%d answered", idx + 1)
                 except Exception:
-                    logger.exception("Failed to answer Q%d", idx + 1)
                     df.at[idx, COL_ANSWER] = "ОШИБКА"
                     continue
 
@@ -145,13 +130,11 @@ def run_tests(agent: RAGAgent) -> None:
             if not correct or correct == "nan":
                 continue
 
-            score, comment = _score_answer(agent, question, correct, system_answer)
+            score, _comment = _score_answer(agent, question, correct, system_answer)
             df.at[idx, COL_SCORE] = score
             all_scores.append(score)
-            all_comments.append(comment)
-            logger.info("Q%d scored: %d/10", idx + 1, score)
 
-        out_path = path.parent / f"{path.stem}_scored{path.suffix}"
+        out_path = output_dir / f"{path.stem}_scored{path.suffix}"
         _write_file(df, out_path)
         console.print(f"[green]Saved {out_path}[/]")
 

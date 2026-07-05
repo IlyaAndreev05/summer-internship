@@ -6,9 +6,8 @@ PYTHON="/app/.venv/bin/python"
 
 echo "=== ALINA RAG | mode=$MODE ==="
 
-# Авто-индексация: проверяет хеши в Postgres, индексирует только новые/изменённые
 echo "Auto-indexing..."
-$PYTHON -c "from alina_rag.auto_index import auto_index; auto_index()" || echo "Auto-index failed, continuing..."
+$PYTHON -c "from alina_rag.indexer import auto_index; auto_index()" || echo "Auto-index failed, continuing..."
 
 case "$MODE" in
   console|vk|test|batch)

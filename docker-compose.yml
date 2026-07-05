@@ -24,9 +24,7 @@ services:
       - PYTHONUNBUFFERED=1
       - APP_MODE=${APP_MODE:-console}
     volumes:
-      - ./projects:/app/projects:ro
-      - ./tests:/app/tests:ro
-      - ./data:/app/data
+      - ./data:/app/data:ro
     depends_on:
       ollama:
         condition: service_healthy

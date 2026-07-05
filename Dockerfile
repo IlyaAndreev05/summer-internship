@@ -11,6 +11,6 @@ RUN uv sync --frozen --no-dev && \
     ln -s /app/.venv/bin/alina-rag /usr/local/bin/gpss-helper
 
 COPY docker-entrypoint.sh ./
-RUN chmod +x docker-entrypoint.sh && mkdir -p data docs projects tests
+RUN chmod +x docker-entrypoint.sh && mkdir -p data/docs data/projects data/questions/input data/questions/output
 
 ENTRYPOINT ["./docker-entrypoint.sh"]
