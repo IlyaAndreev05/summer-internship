@@ -8,7 +8,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams
 
 from alina_rag.config import settings
-from alina_rag.prompts import SYSTEM_PROMPT
+from alina_rag.prompts import AUTO_RAG_PROMPT, SYSTEM_PROMPT
 from alina_rag.search import BM25Search, HybridSearch, ProjectSearch, TrigramSearch, VectorSearch
 
 logger = logging.getLogger(__name__)
@@ -98,6 +98,41 @@ class RAGAgent:
         return name, args.get("query", "")
 
     def answer(
+        self,
+        question: str,
+        history: list[dict] | None = None,
+        step_callback: Callable | None = None,
+    ) -> str:
+        if settings.rag_mode == "auto":
+            return self._answer_auto(question, history, step_callback)
+        return self._answer_tools(question, history, step_callback)
+
+    def _answer_auto(
+        self,
+        question: str,
+        history: list[dict] | None = None,
+        step_callback: Callable | None = None,
+    ) -> str:
+        if step_callback:
+            step_callback({"type": "search", "query": question, "iteration": 0})
+
+        docs = self._docs.search(question)
+        projects = self._projects.search(question)
+        context = f"Документация:\n{docs}\n\nПроекты:\n{projects}"
+
+        messages: list = [SystemMessage(content=AUTO_RAG_PROMPT)]
+        if history:
+            for msg in history:
+                if msg.get("role") == "user":
+                    messages.append(HumanMessage(content=msg["content"]))
+                elif msg.get("role") == "assistant":
+                    messages.append(AIMessage(content=msg["content"]))
+        messages.append(HumanMessage(content=f"Контекст:\n{context}\n\nВопрос: {question}"))
+
+        response = self._llm.invoke(messages)
+        return response.content if isinstance(response.content, str) else str(response.content)
+
+    def _answer_tools(
         self,
         question: str,
         history: list[dict] | None = None,

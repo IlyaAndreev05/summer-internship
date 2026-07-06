@@ -58,6 +58,13 @@ def run_console(agent: RAGAgent, verbose: bool = False) -> None:
                         style="dim yellow",
                     )
                 )
+            elif step.get("type") == "search":
+                console.print(
+                    Text(
+                        f"  🔍 поиск(\"{step.get('query', '')}\")",
+                        style="dim yellow",
+                    )
+                )
 
         try:
             response = agent.answer(

@@ -1,5 +1,6 @@
 import hashlib
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from langchain_community.document_loaders import CSVLoader, TextLoader
@@ -99,44 +100,46 @@ def _ensure_collection(client: QdrantClient):
 
 
 def _sync_vectors() -> None:
+    """Перестроение векторов из Postgres без удаления коллекции."""
     client = _get_qdrant_client()
-    embeddings = _get_embeddings()
     _ensure_collection(client)
-
-    client.delete_collection(settings.qdrant_collection)
-    client.create_collection(
-        collection_name=settings.qdrant_collection,
-        vectors_config=VectorParams(size=768, distance=Distance.COSINE),
-    )
 
     rows = load_all_chunks()
     if not rows:
         return
 
-    texts = [r[3] for r in rows]
-    vectors = embeddings.embed_documents(texts)
-    points = [
-        PointStruct(
-            id=i,
-            vector=vectors[i],
-            payload={
-                "source": r[1],
-                "filename": r[2],
-                "chunk_index": r[4],
-            },
-        )
-        for i, r in enumerate(rows)
-    ]
+    batch_size = 200
+    total = len(rows)
+    print(f"  ⏳ Индексация: 0/{total}", end="", flush=True)
 
-    batch_size = 100
-    total = len(points)
-    print(f"  ⏳ Синхронизация векторов: 0/{total}", end="", flush=True)
-    for i in range(0, total, batch_size):
-        batch = points[i : i + batch_size]
-        client.upsert(collection_name=settings.qdrant_collection, points=batch)
-        done = min(i + batch_size, total)
-        print(f"\r  ⏳ Синхронизация векторов: {done}/{total}", end="", flush=True)
-        logger.info("Synced vectors: %d/%d", done, total)
+    def _embed_batch(start: int, batch_rows: list) -> tuple[int, list]:
+        emb = _get_embeddings()
+        texts = [r[3] for r in batch_rows]
+        vectors = emb.embed_documents(texts)
+        points = [
+            PointStruct(
+                id=start + j,
+                vector=vectors[j],
+                payload={
+                    "source": r[1],
+                    "filename": r[2],
+                    "chunk_index": r[4],
+                },
+            )
+            for j, r in enumerate(batch_rows)
+        ]
+        return start, points
+
+    batches = [(i, rows[i : i + batch_size]) for i in range(0, total, batch_size)]
+    done = 0
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {pool.submit(_embed_batch, s, b): s for s, b in batches}
+        for future in as_completed(futures):
+            _, points = future.result()
+            client.upsert(collection_name=settings.qdrant_collection, points=points)
+            done += len(points)
+            print(f"\r  ⏳ Индексация: {done}/{total}", end="", flush=True)
+            logger.info("Synced vectors: %d/%d", done, total)
     print()
 
     logger.info("Vector sync complete: %d points", total)
@@ -175,7 +178,7 @@ def auto_index() -> None:
         pg_count = len(load_all_chunks())
         client = _get_qdrant_client()
         try:
-            qdrant_count = client.get_collection(settings.qdrant_collection).points_count
+            qdrant_count = client.count(collection_name=settings.qdrant_collection, exact=True).count
         except Exception:
             qdrant_count = 0
         if pg_count > 0 and qdrant_count < pg_count:

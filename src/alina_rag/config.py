@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     )
 
     app_mode: str = "console"
+    rag_mode: str = "auto"
 
     llm_model: str = "qwen2.5:1.5b"
     llm_base_url: str = "http://localhost:11434"
@@ -26,9 +27,8 @@ class Settings(BaseSettings):
     vk_group_id: str = ""
 
     data_dir: str = "data"
-
-    chunk_size: int = 500
-    chunk_overlap: int = 100
+    chunk_size: int = 1500
+    chunk_overlap: int = 200
 
     chat_verbose: bool = False
 
