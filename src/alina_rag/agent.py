@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import json
 import logging
 import re
 from collections.abc import Callable
@@ -5,11 +8,19 @@ from collections.abc import Callable
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_ollama import ChatOllama, OllamaEmbeddings
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams
 
-from alina_rag.config import settings
+from alina_rag.config import Settings
+from alina_rag.db import Database
+from alina_rag.models import ScoredResult
 from alina_rag.prompts import AUTO_RAG_PROMPT, SYSTEM_PROMPT
-from alina_rag.search import BM25Search, HybridSearch, ProjectSearch, TrigramSearch, VectorSearch
+from alina_rag.search import (
+    BM25Search,
+    HybridSearch,
+    ProjectSearch,
+    TextLookup,
+    TrigramSearch,
+    VectorSearch,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -49,53 +60,31 @@ _ACTION_RE = re.compile(
 
 
 class RAGAgent:
-    def __init__(self):
+    """RAG-агент с режимами auto и tools."""
+
+    def __init__(self, db: Database, cfg: Settings) -> None:
+        self._cfg = cfg
         self._llm = ChatOllama(
-            model=settings.llm_model,
-            base_url=settings.ollama_host,
+            model=cfg.llm_model,
+            base_url=cfg.ollama_host,
             temperature=0.1,
         )
-        qdrant = QdrantClient(url=settings.qdrant_url)
-        embeddings = OllamaEmbeddings(
-            model=settings.embed_model,
-            base_url=settings.ollama_host,
+        self._embeddings = OllamaEmbeddings(
+            model=cfg.embed_model,
+            base_url=cfg.ollama_host,
         )
-        try:
-            qdrant.get_collection(settings.qdrant_collection)
-        except Exception:
-            qdrant.create_collection(
-                collection_name=settings.qdrant_collection,
-                vectors_config=VectorParams(size=768, distance=Distance.COSINE),
-            )
-        self._docs = HybridSearch([
-            VectorSearch(qdrant, settings.qdrant_collection, embeddings),
-            TrigramSearch(),
-            BM25Search(),
-        ])
-        self._projects = ProjectSearch()
-        self._qdrant = qdrant
-        self._embeddings = embeddings
+        qdrant = QdrantClient(url=cfg.qdrant_url)
+        text_lookup = TextLookup(db)
+        methods = [
+            VectorSearch(qdrant, cfg.qdrant_collection, self._embeddings),
+            TrigramSearch(db),
+            BM25Search(db),
+        ]
+        self._docs = HybridSearch(methods, text_lookup)
+        self._projects = ProjectSearch(cfg.projects_path)
 
     def get_llm(self):
         return self._llm
-
-    def _execute_tool(self, name: str, query: str) -> str:
-        if name == "search_docs":
-            return self._docs.search(query)
-        if name == "search_projects":
-            return self._projects.search(query)
-        return f"Неизвестный инструмент: {name}"
-
-    def _extract_tool_args(self, tool_call: dict) -> tuple[str, str]:
-        name = tool_call.get("name") or tool_call.get("function", {}).get("name", "")
-        args = tool_call.get("args") or tool_call.get("function", {}).get("arguments", {})
-        if isinstance(args, str):
-            import json
-            try:
-                args = json.loads(args)
-            except Exception:
-                args = {}
-        return name, args.get("query", "")
 
     def answer(
         self,
@@ -103,9 +92,17 @@ class RAGAgent:
         history: list[dict] | None = None,
         step_callback: Callable | None = None,
     ) -> str:
-        if settings.rag_mode == "auto":
+        if self._cfg.rag_mode == "auto":
             return self._answer_auto(question, history, step_callback)
         return self._answer_tools(question, history, step_callback)
+
+    def _format_results(self, results: list[ScoredResult]) -> str:
+        if not results:
+            return "Ничего не найдено."
+        parts = []
+        for i, r in enumerate(results, 1):
+            parts.append(f"[{i}] (Источник: {r.source})\n{r.text}")
+        return "\n\n".join(parts)
 
     def _answer_auto(
         self,
@@ -113,12 +110,22 @@ class RAGAgent:
         history: list[dict] | None = None,
         step_callback: Callable | None = None,
     ) -> str:
-        if step_callback:
-            step_callback({"type": "search", "query": question, "iteration": 0})
+        docs_results = self._docs.search_results(question)
+        projects_results = self._projects.search_results(question)
 
-        docs = self._docs.search(question)
-        projects = self._projects.search(question)
-        context = f"Документация:\n{docs}\n\nПроекты:\n{projects}"
+        if step_callback:
+            if self._cfg.chat_verbose:
+                step_callback({
+                    "type": "search",
+                    "query": question,
+                    "results": docs_results,
+                })
+            else:
+                step_callback({"type": "search", "query": question})
+
+        docs_text = self._format_results(docs_results)
+        projects_text = self._format_results(projects_results)
+        context = f"Документация:\n{docs_text}\n\nПроекты:\n{projects_text}"
 
         messages: list = [SystemMessage(content=AUTO_RAG_PROMPT)]
         if history:
@@ -162,18 +169,22 @@ class RAGAgent:
                     tool_name, query_val = self._extract_tool_args(tc)
                     logger.info("Tool call: %s(%s)", tool_name, query_val)
 
-                    result = self._execute_tool(tool_name, query_val)
+                    results = self._search_results(tool_name, query_val)
+                    result_text = self._format_results(results)
 
                     if step_callback:
-                        step_callback({
+                        cb: dict = {
                             "type": "tool_call",
                             "tool": tool_name,
                             "query": query_val,
                             "iteration": iteration,
-                        })
+                        }
+                        if self._cfg.chat_verbose:
+                            cb["results"] = results
+                        step_callback(cb)
 
                     messages.append(ToolMessage(
-                        content=result,
+                        content=result_text,
                         tool_call_id=tc.get("id", ""),
                     ))
                 continue
@@ -185,22 +196,26 @@ class RAGAgent:
                 query_val = match.group(2)
                 logger.info("Parsed action: %s(%s)", tool_name, query_val)
 
-                result = self._execute_tool(tool_name, query_val)
+                results = self._search_results(tool_name, query_val)
+                result_text = self._format_results(results)
 
                 if step_callback:
-                    step_callback({
+                    cb = {
                         "type": "tool_call",
                         "tool": tool_name,
                         "query": query_val,
                         "iteration": iteration,
-                    })
+                    }
+                    if self._cfg.chat_verbose:
+                        cb["results"] = results
+                    step_callback(cb)
 
                 truncated = content[: match.start()].rstrip()
                 if truncated:
                     messages.append(AIMessage(content=truncated))
 
                 tool_msg = (
-                    f"Результат поиска {tool_name}(\"{query_val}\"):\n\n{result}\n\n"
+                    f'Результат поиска {tool_name}("{query_val}"):\n\n{result_text}\n\n'
                     "Проанализируй результат и дай краткий ответ без нумерации [1] и без указания источников."
                 )
                 messages.append(HumanMessage(content=tool_msg))
@@ -210,3 +225,20 @@ class RAGAgent:
 
         last = messages[-1]
         return last.content if hasattr(last, "content") else str(last)
+
+    def _search_results(self, name: str, query: str) -> list[ScoredResult]:
+        if name == "search_docs":
+            return self._docs.search_results(query)
+        if name == "search_projects":
+            return self._projects.search_results(query)
+        return []
+
+    def _extract_tool_args(self, tool_call: dict) -> tuple[str, str]:
+        name = tool_call.get("name") or tool_call.get("function", {}).get("name", "")
+        args = tool_call.get("args") or tool_call.get("function", {}).get("arguments", {})
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except Exception:
+                args = {}
+        return name, args.get("query", "")

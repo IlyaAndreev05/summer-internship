@@ -1,40 +1,38 @@
+from __future__ import annotations
+
+import logging
+import re
+from pathlib import Path
+
 import pandas as pd
 from rich.console import Console
 from rich.table import Table
 
 from alina_rag.agent import RAGAgent
-from alina_rag.config import settings
+from alina_rag.config import Settings
+from alina_rag.indexer import Indexer
+from alina_rag.prompts import JUDGE_PROMPT
+
+logger = logging.getLogger(__name__)
 
 COL_QUESTION = "Вопрос"
 COL_ANSWER = "Ответ системы"
 COL_CORRECT = "Правильный ответ"
-COL_SCORE = "Оценка (1-10)"
+COL_SCORE = "Оценка"
+COL_COMMENT = "Комментарий"
 
-SCORE_PROMPT = """Ты — эксперт по оценке качества ответов ИИ-консультанта по GPSS.
-
-Оцени ответ системы на вопрос. Сравни его с правильным ответом и поставь оценку от 1 до 10:
-- 10: ответ полностью совпадает с правильным по смыслу, все ключевые моменты освещены.
-- 7-9: ответ в целом верный, но упущены некоторые детали.
-- 4-6: ответ частично верный, есть неточности или не хватает важной информации.
-- 1-3: ответ неверный, не по теме или содержит грубые ошибки.
-
-Выдай ответ строго в формате:
-Оценка: N
-Комментарий: <одно предложение>
-
-Вопрос: {question}
-Правильный ответ: {correct_answer}
-Ответ системы: {system_answer}"""
+_SCORE_RE = re.compile(r"Оценка:\s*(\d+)", re.IGNORECASE)
+_COMMENT_RE = re.compile(r"Комментарий:\s*(.+)", re.IGNORECASE)
 
 
-def _read_file(path):
+def _read_file(path: Path) -> pd.DataFrame:
     suffix = path.suffix.lower()
     if suffix == ".csv":
         return pd.read_csv(path, encoding="utf-8")
     return pd.read_excel(path)
 
 
-def _write_file(df, path):
+def _write_file(df: pd.DataFrame, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     suffix = path.suffix.lower()
     if suffix == ".csv":
@@ -43,48 +41,54 @@ def _write_file(df, path):
         df.to_excel(path, index=False)
 
 
-def _score_answer(agent, question, correct, system_answer):
-    prompt = SCORE_PROMPT.format(
+def _score_answer(llm, question: str, correct: str, system_answer: str) -> tuple[int, str]:
+    prompt = JUDGE_PROMPT.format(
         question=question,
         correct_answer=correct,
         system_answer=system_answer,
     )
     try:
-        response = agent.get_llm().invoke(
-            [
-                {"role": "system", "content": "Ты — эксперт по оценке ответов."},
-                {"role": "user", "content": prompt},
-            ]
-        )
-        text = response.content
+        response = llm.invoke([
+            {"role": "system", "content": "Ты — эксперт по оценке ответов."},
+            {"role": "user", "content": prompt},
+        ])
+        text = response.content if isinstance(response.content, str) else str(response.content)
     except Exception:
         return 0, "Ошибка оценки"
 
     score = 0
     comment = ""
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.lower().startswith("оценка:"):
-            try:
-                score = int(stripped.split(":", 1)[1].strip())
-            except ValueError:
-                score = 0
-        elif stripped.lower().startswith("комментарий:"):
-            comment = stripped.split(":", 1)[1].strip()
+    match_score = _SCORE_RE.search(text)
+    if match_score:
+        try:
+            score = int(match_score.group(1))
+        except ValueError:
+            score = 0
+
+    match_comment = _COMMENT_RE.search(text)
+    if match_comment:
+        comment = match_comment.group(1).strip()
+
     if not comment:
         comment = text[:200]
     return max(0, min(10, score)), comment
 
 
-def run_tests(agent: RAGAgent):
-    input_dir = settings.questions_input_path
-    output_dir = settings.questions_output_path
+def run_tests(agent: RAGAgent, indexer: Indexer, cfg: Settings) -> None:
+    input_dir = cfg.test_input_path
+    output_dir = cfg.test_output_path
 
     if not input_dir.exists():
+        logger.error("Test input directory not found: %s", input_dir)
+        return
+
+    if not indexer.is_ready:
+        logger.error("⏳ Индексация в процессе, подождите...")
         return
 
     console = Console()
-    all_scores = []
+    all_scores: list[int] = []
+    llm = agent.get_llm()
 
     for path in sorted(input_dir.rglob("*")):
         if not path.is_file() or path.name.startswith("."):
@@ -98,12 +102,15 @@ def run_tests(agent: RAGAgent):
 
         df = _read_file(path)
         if COL_QUESTION not in df.columns:
+            logger.warning("No '%s' column in %s, skipping", COL_QUESTION, path.name)
             continue
 
         if COL_ANSWER not in df.columns:
             df[COL_ANSWER] = ""
         if COL_SCORE not in df.columns:
             df[COL_SCORE] = ""
+        if COL_COMMENT not in df.columns:
+            df[COL_COMMENT] = ""
 
         has_correct = COL_CORRECT in df.columns
 
@@ -113,7 +120,7 @@ def run_tests(agent: RAGAgent):
                 continue
 
             existing_answer = str(row.get(COL_ANSWER, "")).strip()
-            if existing_answer and existing_answer != "nan" and existing_answer != "":
+            if existing_answer and existing_answer != "nan":
                 system_answer = existing_answer
             else:
                 try:
@@ -130,8 +137,9 @@ def run_tests(agent: RAGAgent):
             if not correct or correct == "nan":
                 continue
 
-            score, _comment = _score_answer(agent, question, correct, system_answer)
+            score, comment = _score_answer(llm, question, correct, system_answer)
             df.at[idx, COL_SCORE] = score
+            df.at[idx, COL_COMMENT] = comment
             all_scores.append(score)
 
         out_path = output_dir / f"{path.stem}_scored{path.suffix}"

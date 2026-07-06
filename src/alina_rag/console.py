@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 
 from rich.console import Console
@@ -6,13 +8,15 @@ from rich.prompt import Prompt
 from rich.text import Text
 
 from alina_rag.agent import RAGAgent
+from alina_rag.indexer import Indexer
+from alina_rag.models import ChatHistory
 
 logger = logging.getLogger(__name__)
 
 
-def run_console(agent: RAGAgent, verbose: bool = False) -> None:
+def run_console(agent: RAGAgent, indexer: Indexer, verbose: bool = False) -> None:
     console = Console()
-    history: list[dict] = []
+    history = ChatHistory()
 
     console.print()
     console.print("[bold cyan]╔════════════════════════════════════════════════╗[/]")
@@ -48,35 +52,55 @@ def run_console(agent: RAGAgent, verbose: bool = False) -> None:
             console.print(f"[dim]Режим отладки {state}.[/]")
             continue
 
-        def step_cb(step, _verbose: bool = verbose):
+        if not indexer.is_ready:
+            console.print("[yellow]⏳ Индексация в процессе, подождите...[/]")
+            continue
+
+        def step_cb(step: dict, _verbose: bool = verbose) -> None:
             if not _verbose:
                 return
             if step.get("type") == "tool_call":
+                tool = step.get("tool", "?")
+                query = step.get("query", "")
+                iteration = step.get("iteration", 0) + 1
                 console.print(
                     Text(
-                        f"  🔍 {step.get('tool', '?')}(\"{step.get('query', '')}\") [итерация {step.get('iteration', 0)+1}]",
+                        f'  🔍 {tool}("{query}") [итерация {iteration}]',
                         style="dim yellow",
                     )
                 )
             elif step.get("type") == "search":
-                console.print(
-                    Text(
-                        f"  🔍 поиск(\"{step.get('query', '')}\")",
-                        style="dim yellow",
+                query = step.get("query", "")
+                results = step.get("results")
+                if results:
+                    count = len(results)
+                    top_src = results[0].source if results else "?"
+                    top_preview = results[0].text[:80] if results and results[0].text else ""
+                    console.print(
+                        Text(
+                            f'  🔍 поиск("{query}") — найдено {count}, топ: {top_src}\n'
+                            f'     {top_preview}…',
+                            style="dim yellow",
+                        )
                     )
-                )
+                else:
+                    console.print(
+                        Text(f'  🔍 поиск("{query}")', style="dim yellow")
+                    )
 
         try:
             response = agent.answer(
-                stripped, history=history[-10:] if history else None, step_callback=step_cb
+                stripped,
+                history=history.last_dicts(10),
+                step_callback=step_cb,
             )
         except Exception:
             logger.exception("Agent error")
             console.print("[red]Ошибка при обработке запроса.[/]")
             continue
 
-        history.append({"role": "user", "content": stripped})
-        history.append({"role": "assistant", "content": response})
+        history.add_user(stripped)
+        history.add_assistant(response)
 
         console.print()
         console.print(Markdown(response))
