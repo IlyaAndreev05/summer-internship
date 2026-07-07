@@ -1,0 +1,46 @@
+services:
+  ollama:
+    image: ollama/ollama:0.31.1
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+      - OLLAMA_HOST=0.0.0.0
+    ports:
+      - "11434:11434"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ollama serve &
+        PID=$$!
+        sleep 5
+        ollama list | grep -q nomic-embed-text || ollama pull nomic-embed-text
+        ollama list | grep -q qwen2.5:1.5b || ollama pull qwen2.5:1.5b
+        wait $$PID
+
+  qdrant:
+    image: qdrant/qdrant:v1.18.2
+    volumes:
+      - qdrant_data:/qdrant/storage
+    ports:
+      - "6333:6333"
+
+  app:
+    build: .
+    volumes:
+      - ./data:/app/data
+    environment:
+      - OLLAMA_URL=http://ollama:11434
+      - QDRANT_URL=http://qdrant:6333
+      - MODE=${MODE:-console}
+      - VK_TOKEN=${VK_TOKEN:-}
+      - VK_GROUP_ID=${VK_GROUP_ID:-}
+    stdin_open: true
+    tty: true
+    depends_on:
+      - ollama
+      - qdrant
+
+volumes:
+  ollama_data:
+  qdrant_data:
