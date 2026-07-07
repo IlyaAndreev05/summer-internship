@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://localhost:6333"
     embedding_model: str = "nomic-embed-text"
     llm_model: str = "qwen2.5:1.5b"
-    chunk_size: int = 1000
+    chunk_size: int = 3000
     chunk_overlap: int = 200
     top_k: int = 5
     collection_name: str = "gpss_rag"

@@ -32,23 +32,32 @@ class QdrantVectorStore:
             )
             logger.info("Created Qdrant collection %s", self.settings.collection_name)
 
-    def index(self, items: list[IndexedItem]) -> None:
-        texts = [item.content for item in items]
-        embeddings = self.embeddings.embed_documents(texts)
+    BATCH_SIZE = 50
+
+    def index(self, items: list[IndexedItem], progress_callback=None) -> None:
         points = []
-        for i, (item, emb) in enumerate(zip(items, embeddings, strict=True)):
-            payload: dict = {
-                "content": item.content,
-                "source": item.source,
-                "source_type": item.source_type.value,
-            }
-            if item.doc_meta:
-                payload["doc_page"] = item.doc_meta.page
-                payload["doc_section"] = item.doc_meta.section
-                payload["doc_chunk_index"] = item.doc_meta.chunk_index
-            if item.project_meta:
-                payload["project_name"] = item.project_meta.name
-            points.append(PointStruct(id=i, vector=emb, payload=payload))
+        point_id = 0
+        total = len(items)
+        for batch_start in range(0, total, self.BATCH_SIZE):
+            batch = items[batch_start : batch_start + self.BATCH_SIZE]
+            texts = [item.content for item in batch]
+            embeddings = self.embeddings.embed_documents(texts)
+            for item, emb in zip(batch, embeddings, strict=True):
+                payload: dict = {
+                    "content": item.content,
+                    "source": item.source,
+                    "source_type": item.source_type.value,
+                }
+                if item.doc_meta:
+                    payload["doc_page"] = item.doc_meta.page
+                    payload["doc_section"] = item.doc_meta.section
+                    payload["doc_chunk_index"] = item.doc_meta.chunk_index
+                if item.project_meta:
+                    payload["project_name"] = item.project_meta.name
+                points.append(PointStruct(id=point_id, vector=emb, payload=payload))
+                point_id += 1
+            if progress_callback:
+                progress_callback(point_id)
         self.client.upsert(
             collection_name=self.settings.collection_name,
             points=points,
