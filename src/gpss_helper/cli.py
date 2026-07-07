@@ -16,11 +16,19 @@ from .vector_store import QdrantVectorStore
 def main() -> None:
     parser = argparse.ArgumentParser(prog="gpss-helper")
     parser.add_argument(
-        "--mode",
+        "mode",
+        nargs="?",
         choices=["vk", "batch", "console", "test"],
-        default="console",
+        default=None,
+    )
+    parser.add_argument(
+        "--mode",
+        dest="mode_flag",
+        choices=["vk", "batch", "console", "test"],
+        default=None,
     )
     args = parser.parse_args()
+    mode = args.mode or args.mode_flag or "console"
 
     logging.basicConfig(
         level=logging.INFO,
@@ -30,6 +38,7 @@ def main() -> None:
     logger = logging.getLogger("gpss_helper")
 
     settings = Settings()
+    logger.info("Ollama: %s | Qdrant: %s", settings.ollama_url, settings.qdrant_url)
     vector_store = QdrantVectorStore(settings)
     bm25 = BM25Search()
     indexer = Indexer(settings, vector_store, bm25)
@@ -38,16 +47,16 @@ def main() -> None:
     logger.info("Starting indexing in background...")
     indexer.start()
 
-    if args.mode == "console":
+    if mode == "console":
         ConsoleMode(agent, indexer).run()
-    elif args.mode == "vk":
+    elif mode == "vk":
         VkBotMode(agent, indexer, settings).run()
-    elif args.mode == "batch":
+    elif mode == "batch":
         if not indexer.indexed:
             print("Идёт процесс индексации...")
             sys.exit(0)
         BatchMode(agent, settings).run()
-    elif args.mode == "test":
+    elif mode == "test":
         if not indexer.indexed:
             print("Идёт процесс индексации...")
             sys.exit(0)

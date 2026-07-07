@@ -8,9 +8,9 @@ COPY pyproject.toml .
 RUN uv sync --no-dev --no-install-project
 
 COPY src/ src/
-ENV PYTHONPATH=/app/src
+RUN uv sync --no-dev
 
-RUN printf '#!/bin/sh\nexec uv run python -m gpss_helper "$@"\n' > /usr/local/bin/gpss-helper && chmod +x /usr/local/bin/gpss-helper
+RUN printf '#!/bin/sh\nexec /app/.venv/bin/gpss-helper "$@"\n' > /usr/local/bin/gpss-helper && chmod +x /usr/local/bin/gpss-helper
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

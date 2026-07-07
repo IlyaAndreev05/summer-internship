@@ -26,6 +26,10 @@ class Indexer:
         self._indexed = False
         self._error: Exception | None = None
         self._thread: threading.Thread | None = None
+        self._progress_total: int = 0
+        self._progress_done: int = 0
+        self._phase: str = ""
+        self._start_time: float = 0.0
 
     @property
     def indexed(self) -> bool:
@@ -35,10 +39,18 @@ class Indexer:
     def error(self) -> Exception | None:
         return self._error
 
+    @property
+    def progress(self) -> tuple[int, int, str, float]:
+        return self._progress_done, self._progress_total, self._phase, self._start_time
+
+
     def _read_pdf(self, path: Path) -> str:
         parts: list[str] = []
         with pdfplumber.open(path) as pdf:
-            for page in pdf.pages:
+            total = len(pdf.pages)
+            for i, page in enumerate(pdf.pages):
+                if i % 10 == 0:
+                    logger.info("PDF page %d/%d...", i + 1, total)
                 text = page.extract_text()
                 if text:
                     parts.append(text)
@@ -63,12 +75,14 @@ class Indexer:
             logger.warning("Skipping unsupported file: %s", path)
             return []
 
+        logger.info("Extracted %d chars, splitting...", len(text))
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=self.settings.chunk_size,
             chunk_overlap=self.settings.chunk_overlap,
             separators=["\n\n", "\n", ". ", " ", ""],
         )
         chunks = splitter.split_text(text)
+        logger.info("Created %d chunks", len(chunks))
         items: list[IndexedItem] = []
         for i, chunk in enumerate(chunks):
             items.append(
@@ -117,6 +131,7 @@ class Indexer:
 
     def _run_indexing(self) -> None:
         start = time.time()
+        self._start_time = start
         docs_dir = Path(self.settings.docs_dir)
         projects_dir = Path(self.settings.projects_dir)
 
@@ -129,25 +144,35 @@ class Indexer:
             project_files.extend(projects_dir.glob(ext))
 
         all_items: list[IndexedItem] = []
+        self._phase = "loading"
+        self._progress_total = len(doc_files) + len(project_files)
+        self._progress_done = 0
 
         for f in doc_files:
+            logger.info("Loading %s...", f.name)
             items = self._load_document(f)
             all_items.extend(items)
+            self._progress_done += 1
             logger.info(
-                "Loaded %d chunks from %s (processed %d total)",
+                "Loaded %d chunks from %s (%d/%d files)",
                 len(items),
                 f.name,
-                len(all_items),
+                self._progress_done,
+                self._progress_total,
             )
 
+
         for f in project_files:
+            logger.info("Loading %s...", f.name)
             items = self._load_projects_file(f)
             all_items.extend(items)
+            self._progress_done += 1
             logger.info(
-                "Loaded %d projects from %s (processed %d total)",
+                "Loaded %d projects from %s (%d/%d files)",
                 len(items),
                 f.name,
-                len(all_items),
+                self._progress_done,
+                self._progress_total,
             )
 
         total = len(all_items)
@@ -156,14 +181,19 @@ class Indexer:
             self._indexed = True
             return
 
+        self._phase = "embedding"
+        self._progress_total = total
+        self._progress_done = 0
         logger.info("Indexing %d items into Qdrant...", total)
         t0 = time.time()
-        self.vector_store.index(all_items)
+        self.vector_store.index(all_items, progress_callback=lambda n: setattr(self, "_progress_done", n))
         t1 = time.time()
         logger.info("Qdrant indexing done in %.1fs", t1 - t0)
 
+        self._phase = "bm25"
         logger.info("Building BM25 index...")
         self.bm25.build(all_items)
+        self._progress_done = total
 
         elapsed = time.time() - start
         speed = total / elapsed if elapsed > 0 else 0

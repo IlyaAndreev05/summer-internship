@@ -1,5 +1,5 @@
 import sys
-
+import time
 from ..indexer import Indexer
 from ..rag_agent import RAGAgent
 
@@ -29,7 +29,13 @@ class ConsoleMode:
             if not query.strip():
                 continue
             if not self.indexer.indexed:
-                print("Идёт процесс индексации...")
+                done, total, phase, start_time = self.indexer.progress
+                elapsed = time.time() - start_time if start_time else 0
+                phase_label = {"loading": "загрузка файлов", "embedding": "эмбеддинги", "bm25": "построение BM25"}.get(phase, phase)
+                if total > 0:
+                    print(f"Индексация [{phase_label}]: {done}/{total}, прошло {elapsed:.0f}с")
+                else:
+                    print(f"Индексация [{phase_label}]... прошло {elapsed:.0f}с")
                 if self.indexer.error:
                     print(f"Ошибка индексации: {self.indexer.error}")
                     sys.exit(1)
